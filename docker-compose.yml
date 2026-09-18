@@ -1,0 +1,35 @@
+# Docker Compose configuration for local PostgreSQL development database.
+# This does NOT run in production — it's only for developing on your machine.
+services:
+  # The PostgreSQL database service used by the app during local development.
+  postgres:
+    image: postgres:16-alpine   # Stable, widely-used LTS-style PostgreSQL version
+    container_name: multi-tenant-booking-db
+    restart: unless-stopped
+
+    environment:
+      # These come from the .env file (see below), NOT hard-coded here,
+      # so credentials never end up committed to source control.
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    ports:
+      # HOST_PORT:CONTAINER_PORT — change HOST_PORT via .env if 5432 is busy
+      - "${POSTGRES_PORT}:5432"
+
+    volumes:
+      # Named volume so your data survives container restarts/rebuilds
+      - postgres_data:/var/lib/postgresql/data
+
+    healthcheck:
+      # Lets you (or other tools) check "is Postgres actually ready yet?"
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  # Docker manages this volume's storage location on your machine.
+  postgres_data:
+    name: multi-tenant-booking-postgres-data
