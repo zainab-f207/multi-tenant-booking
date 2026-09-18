@@ -2,9 +2,13 @@ import { env } from "./env.server";
 import { PrismaClient } from "../generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 
-const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient };
+const globalForPrisma = globalThis as unknown as {
+  prisma?: PrismaClient;
+};
 
-const adapter = new PrismaPg({ connectionString: env.DATABASE_URL});
+const adapter = new PrismaPg({
+  connectionString: env.APP_DATABASE_URL,
+});
 
 export const prisma =
   globalForPrisma.prisma ?? new PrismaClient({ adapter });
