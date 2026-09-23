@@ -25,6 +25,7 @@ model Tenant {
 
   users    User[]
   bookings Booking[]
+  sessions Session[]
 
   @@map("tenants")
 }
@@ -53,6 +54,7 @@ model User {
   tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   role            Role      @relation(fields: [roleId], references: [id], onDelete: Restrict)
   createdBookings Booking[] @relation("BookingCreatedBy")
+  sessions        Session[]
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -79,4 +81,21 @@ model Booking {
   @@index([createdById])
   @@index([tenantId, startTime]) 
   @@map("bookings")
+}
+
+model Session {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @db.Uuid
+  tenantId  String   @db.Uuid
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([tenantId])
+  @@index([expiresAt])
+  @@map("sessions")
 }

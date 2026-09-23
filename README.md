@@ -142,15 +142,27 @@ Defined in `lib/rbac.ts`. Roles and permissions, as actually coded:
 
 ## Authentication Status
 
-Four UI routes exist: `/onboarding`, `/login`, `/register`, `/forgot-password`. Each is a client component that:
+Real, server-side, cookie-based session authentication now exists for `/login`. `/register`, `/onboarding`, and `/forgot-password` remain demo UI (client-side Zod validation, simulated success message) — building real account creation for those is out of scope for this phase.
 
-- Runs Zod validation (`lib/validation/auth.ts`) on submit
-- Shows inline, per-field error messages on invalid input
-- On valid input, shows a demo success message stating that backend authentication will be connected in a later implementation
+- `POST /api/auth/login` — validates credentials with Zod, looks up the user via `find_user_for_login()` (see "Session Security Design"), verifies the password with `bcryptjs`, creates a server-side session, and sets an httpOnly cookie. Returns the same generic "Invalid email or password" error whether the email doesn't exist or the password is wrong.
+- `POST /api/auth/logout` — deletes the server-side session and clears the cookie. Safe to call repeatedly.
+- `getCurrentUser()` (`lib/auth/current-user.ts`) now reads the session cookie, looks it up, and returns `{ id, tenantId, roleName, email }`, or throws `UnauthenticatedError` if there is no valid session. `AuthNotImplementedError` no longer exists.
+- `/dashboard` is a temporary placeholder authenticated page proving the flow works end-to-end — it is **not** the Week 2 booking dashboard.
 
-None of these forms create real accounts, sessions, or perform real login. There is no password verification against `passwordHash`, no cookies, and no server-side session store.
+**Known limitations:**
+- Only the four seeded Week 1 development users can log in; there is no real registration flow yet.
+- Login looks up by email only and returns the first match; if the same email were ever seeded in two different tenants (not the case today), only one would be reachable. A future "choose your organization" step would resolve this.
+- "Remember me" is captured by the form but does not yet change session length — every session is a flat 7-day expiry.
+- No brute-force/rate-limiting protection exists on the login endpoint yet.
+- Expired sessions are only cleaned up opportunistically on lookup, not by a scheduled job.
 
-`lib/auth/current-user.ts` exports `getCurrentUser()`, which always throws `AuthNotImplementedError`. This is intentional — it is a documented placeholder seam for future code to call, not a stub that fakes a logged-in user.
+## Session Security Design
+
+- **Cookie contents**: an httpOnly cookie (`session_token`) holds only an opaque, cryptographically random 256-bit token — never a JWT, never any user/tenant/role information. `sameSite=lax`, `secure` in production, 7-day expiry.
+- **Server-side storage**: only a SHA-256 hash of the token is stored, in a new `Session` table. Reading that table alone never yields a usable, replayable token.
+- **Why `Session` is not RLS-protected**: a session lookup has to happen *before* the tenant is known — the tenant is what the lookup discovers. RLS scoped by `app.current_tenant_id` would make that lookup impossible. Safety instead comes from the token being a 256-bit random value looked up by exact match, and `app_user` only holding the privileges explicitly granted on this table.
+- **The login-lookup problem**: `users` has `FORCE ROW LEVEL SECURITY`. A plain query for "find user by email" with no tenant context set would always return zero rows — that's the same guarantee `npm run test:rls` verifies ("no context → 0 users"), now working against login. Rather than weaken that policy, login calls `find_user_for_login(email)`, a `SECURITY DEFINER` SQL function owned by `booking_dev` (a superuser, which always bypasses RLS). `app_user` is granted `EXECUTE` on this one function only — it still cannot query `users` directly without tenant context for anything else. This is the standard PostgreSQL pattern for a narrow, auditable exception to RLS, rather than a blanket bypass.
+- **No new environment variable/secret was introduced.** The token is already 256 bits of true randomness before hashing, so it does not need a server-side pepper the way a low-entropy secret (like a password) would.
 
 ## Client-Side Validation
 
@@ -234,6 +246,23 @@ Runs `scripts/test-rls.ts`, which connects as `app_user` (never `booking_dev`, s
 - Lahore Creative Studio context → exactly 2 users, 2 bookings visible
 - While scoped to TechNova, explicitly querying for Lahore Creative's `tenantId` returns 0 rows
 
+## Testing Authentication
+
+```bash
+npm run test:auth
+```
+
+Runs `scripts/test-auth.ts`, using the same `find_user_for_login()` path the real login route uses (not a plain Prisma query, which RLS would block the same way it would in production). Verifies:
+
+- The seeded TechNova admin can be found and their role resolves
+- The correct development password verifies; a wrong password is rejected
+- A successful "login" creates a session whose lookup returns the expected `userId`, `tenantId`, `roleName`, and `email`
+- An invalid/garbage token is rejected
+- An expired session is rejected
+- Logout invalidates the session, and calling logout again does not throw
+
+`getCurrentUser()` itself reads Next.js's request-scoped `cookies()` API and can only run inside a real request, so it isn't covered by this script — verify it manually: run `npm run dev`, log in at `/login` with a seeded user, confirm you land on `/dashboard` showing the correct email/tenant/role, then log out and confirm you're redirected back to `/login`.
+
 ## Verification Commands
 
 ```bash
@@ -242,6 +271,7 @@ npx tsc --noEmit
 npm run lint
 npm run build
 npm run test:rls
+npm run test:auth
 ```
 
 ## Security Boundaries
@@ -273,9 +303,11 @@ npm run test:rls
 
 The following are explicitly not implemented and should not be assumed to exist:
 
-- Real user authentication (password verification, sessions/cookies)
-- Real organization/user/booking creation via API routes or server actions
-- `getCurrentUser()` returning a real user instead of throwing
+- Real organization/user/booking creation via API routes or server actions (registration/onboarding remain demo UI)
+- Booking management API routes / server actions (Week 2, later phases)
 - RBAC checks actually guarding live authenticated server operations
-- API routes / server actions
 - Email delivery for password reset
+- Rate limiting / brute-force protection on login
+- Scheduled cleanup of expired sessions
+- Support for the same email existing in more than one tenant at login time
+
