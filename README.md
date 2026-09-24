@@ -138,7 +138,7 @@ Defined in `lib/rbac.ts`. Roles and permissions, as actually coded:
 | `MANAGER` | `MANAGE_BOOKINGS`, `CREATE_BOOKINGS`, `VIEW_BOOKINGS` |
 | `STAFF` | `CREATE_BOOKINGS`, `VIEW_BOOKINGS` |
 
-`roleHasPermission()` and `requirePermission()` are authorization helper functions defined in `lib/rbac.ts`. RBAC is currently a foundation only: no API route or server action calls `requirePermission()` yet, because no such routes exist in the repository yet. It is not connected to a live authenticated request path.
+`roleHasPermission()` and `requirePermission()` are authorization helper functions defined in `lib/rbac.ts`. RBAC is currently a foundation only: no API route or server action calls `requirePermission()` yet, because no such routes exist in the repository yet. As of Phase 2, it is connected to a live request path: every booking API route calls requirePermission() before performing its operation.
 
 ## Authentication Status
 
@@ -263,6 +263,61 @@ Runs `scripts/test-auth.ts`, using the same `find_user_for_login()` path the rea
 
 `getCurrentUser()` itself reads Next.js's request-scoped `cookies()` API and can only run inside a real request, so it isn't covered by this script — verify it manually: run `npm run dev`, log in at `/login` with a seeded user, confirm you land on `/dashboard` showing the correct email/tenant/role, then log out and confirm you're redirected back to `/login`.
 
+## Booking APIs (Week 2, Phase 2)
+
+Five REST endpoints under `/api/bookings`, all requiring a valid session (`getCurrentUser()`) and the matching RBAC permission (`lib/rbac.ts`).
+
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/bookings` | `VIEW_BOOKINGS` | List the caller's tenant's bookings (filters: `status`, `startDate`, `endDate`; paginated via `page`/`pageSize`) |
+| POST | `/api/bookings` | `CREATE_BOOKINGS` | Create a booking |
+| GET | `/api/bookings/:id` | `VIEW_BOOKINGS` | Get one booking |
+| PATCH | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Update a booking |
+| DELETE | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Delete a booking |
+
+**Server-controlled fields**: `id`, `tenantId`, `createdById`, `createdAt`, `updatedAt` are never accepted from the client. `tenantId` and `createdById` come only from the verified session; `status` on create always defaults to `PENDING`. Create/update request bodies are validated with `.strict()` Zod schemas (`lib/validation/bookings.ts`) that reject any unexpected key outright, rather than silently ignoring it.
+
+**Idempotency is not implemented in this phase.** Repeated `POST /api/bookings` calls currently create separate bookings. Idempotency keys are planned for Phase 3.
+
+### Security flow per request
+
+getCurrentUser() -- userId + tenantId + role, from the verified session cookie
+↓
+requirePermission() -- checks the role against the required Permission
+↓
+withTenantContext(user.tenantId, ...) -- opens a transaction, sets app.current_tenant_id
+↓
+Prisma query (via tx) -- runs inside that transaction
+↓
+PostgreSQL RLS -- the actual enforcement: rows outside the tenant are never returned
+
+Booking queries deliberately do not add an application-level `WHERE tenantId = ...` clause — isolation depends on PostgreSQL RLS, not on remembering to write that clause correctly in every handler. A booking id belonging to another tenant simply doesn't exist from the query's point of view; the API always responds `404 NOT_FOUND`, never revealing that a row exists under a different tenant.
+
+### Response format
+
+```json
+{ "success": true, "data": ... }
+```
+```json
+{ "success": false, "error": { "code": "...", "message": "...", "details": ... } }
+```
+
+| Situation | Status | Code |
+|---|---|---|
+| Not logged in | 401 | `UNAUTHENTICATED` |
+| Logged in, lacks permission | 403 | `FORBIDDEN` |
+| Invalid body/params | 400 | `VALIDATION_ERROR` |
+| Booking not found / wrong tenant | 404 | `NOT_FOUND` |
+| Unexpected error | 500 | `INTERNAL_ERROR` |
+
+### Testing
+
+```bash
+npm run test:bookings
+```
+
+Tests the data layer directly (not raw HTTP, matching `test:rls`/`test:auth`'s existing approach): confirms `createBookingSchema` rejects a client-supplied `tenantId`, confirms a booking created under Tenant A's context always gets `tenantId = Tenant A`, and confirms Tenant A/B cannot see each other's bookings. Creates and deletes one temporary booking, so it doesn't affect `test:rls`'s exact-count assertions regardless of run order.
+
 ## Verification Commands
 
 ```bash
@@ -272,6 +327,7 @@ npm run lint
 npm run build
 npm run test:rls
 npm run test:auth
+npm run test:bookings
 ```
 
 ## Security Boundaries
@@ -304,8 +360,8 @@ npm run test:auth
 The following are explicitly not implemented and should not be assumed to exist:
 
 - Real organization/user/booking creation via API routes or server actions (registration/onboarding remain demo UI)
-- Booking management API routes / server actions (Week 2, later phases)
-- RBAC checks actually guarding live authenticated server operations
+- Idempotency for booking creation (Phase 3)
+- Booking calendar/list UI, create/edit/delete forms (later Week 2 phases)
 - Email delivery for password reset
 - Rate limiting / brute-force protection on login
 - Scheduled cleanup of expired sessions

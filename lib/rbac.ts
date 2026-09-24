@@ -1,3 +1,4 @@
+
 export enum Permission {
   MANAGE_ORGANIZATION = "MANAGE_ORGANIZATION",
   MANAGE_USERS = "MANAGE_USERS",
@@ -18,34 +19,30 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
   ],
-
   MANAGER: [
     Permission.MANAGE_BOOKINGS,
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
   ],
-
-  STAFF: [
-    Permission.CREATE_BOOKINGS,
-    Permission.VIEW_BOOKINGS,
-  ],
+  STAFF: [Permission.CREATE_BOOKINGS, Permission.VIEW_BOOKINGS],
 };
 
-export function roleHasPermission(
-  roleName: string,
-  permission: Permission
-): boolean {
-  const permissions = ROLE_PERMISSIONS[roleName as RoleName];
+export class ForbiddenError extends Error {
+  constructor(message = "Forbidden.") {
+    super(message);
+    this.name = "ForbiddenError";
+  }
+}
 
+export function roleHasPermission(roleName: string, permission: Permission): boolean {
+  const permissions = ROLE_PERMISSIONS[roleName as RoleName];
   return permissions ? permissions.includes(permission) : false;
 }
 
-export function requirePermission(
-  roleName: string,
-  permission: Permission
-): void {
+
+export function requirePermission(roleName: string, permission: Permission): void {
   if (!roleHasPermission(roleName, permission)) {
-    throw new Error(
+    throw new ForbiddenError(
       `Forbidden: role "${roleName}" does not have permission "${permission}".`
     );
   }
