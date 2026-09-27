@@ -1,0 +1,850 @@
+{
+  "info": {
+    "_postman_id": "aa4aac49-412a-4684-9cae-d85797e6b51f",
+    "name": "Multi-Tenant Booking API",
+    "description": "Week 2 booking API for the Multi-Tenant Booking internship project. Uses real server-side, cookie-based session authentication (no JWT, no Bearer tokens) -- log in with the Login requests in the Authentication folder first; Postman's cookie jar stores the httpOnly `session_token` cookie automatically and reuses it for every later request to {{baseUrl}}. tenantId is never sent by the client anywhere in this collection -- it is always derived server-side from the session, matching the project's security model.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_exporter_id": "46624046",
+    "_collection_link": "https://go.postman.co/collection/46624046-aa4aac49-412a-4684-9cae-d85797e6b51f?source=collection_link"
+  },
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Login - TechNova Admin (Ayesha Khan)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has success:true and a tenantId', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.success).to.eql(true);",
+                  "    pm.expect(body.data.tenantId).to.be.a('string');",
+                  "    pm.expect(body.data.roleName).to.eql('ADMIN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ayesha.khan@technova.dev\",\n  \"password\": \"{{devPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in as the seeded TechNova ADMIN (see prisma/seed.ts). On success, POST /api/auth/login sets an httpOnly `session_token` cookie -- Postman's built-in cookie jar stores and resends this automatically for later requests to {{baseUrl}}, exactly like a real browser. Run this before any request in the Bookings folder. Success response: 200, `{ success: true, data: { id, tenantId, roleName, email, name } }`."
+          },
+          "response": []
+        },
+        {
+          "name": "Login - TechNova Staff (Sana Malik)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Login succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Logged in role is STAFF', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.roleName).to.eql('STAFF');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"sana.malik@technova.dev\",\n  \"password\": \"{{devPassword}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Logs in as the seeded TechNova STAFF user -- same tenant as Ayesha Khan (ADMIN), but STAFF only has VIEW_BOOKINGS and CREATE_BOOKINGS, not MANAGE_BOOKINGS (see lib/rbac.ts). Use this before 'Update Booking - Forbidden as Staff (403)' in the Validation & Errors folder to demonstrate a genuine permission-based 403, as opposed to a cross-tenant 404."
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Logout succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Invalidates the current server-side session and clears the cookie. Safe to call repeatedly -- returns success even if no session is present."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Bookings",
+      "item": [
+        {
+          "name": "List Bookings",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('List succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Response has a bookings array and pagination', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.bookings).to.be.an('array');",
+                  "    pm.expect(body.data.pagination).to.have.property('total');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Lists bookings belonging ONLY to the authenticated user's tenant. tenantId is never sent by the client -- isolation is enforced server-side via withTenantContext() + PostgreSQL Row-Level Security. Requires VIEW_BOOKINGS. Run a Login request first. Response: `{ success: true, data: { bookings: [...], pagination: { page, pageSize, total } } }`, ordered by startTime ascending."
+          },
+          "response": []
+        },
+        {
+          "name": "List Bookings (Filtered + Paginated)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings?status=PENDING&page=1&pageSize=5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "PENDING"
+                },
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "5"
+                }
+              ]
+            },
+            "description": "Demonstrates the optional list filters validated by listBookingsQuerySchema (lib/validation/bookings.ts): `status` (must be a real BookingStatus value), `page`/`pageSize` (bounded, pageSize max 100). `startDate`/`endDate` filters are also supported but omitted here for brevity."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Create succeeds with 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('New booking defaults to PENDING and stores its id', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.status).to.eql('PENDING');",
+                  "    pm.collectionVariables.set('bookingId', body.data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "description": "Required on every POST. Postman's {{$guid}} dynamic variable generates a fresh key each time this specific request is sent -- fine here since this request is just demonstrating a normal create, not the replay/conflict behavior (see the dedicated Idempotency folder for that)."
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Team sync\",\n  \"description\": \"Weekly status update\",\n  \"startTime\": \"2026-10-01T10:00:00.000Z\",\n  \"endTime\": \"2026-10-01T10:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Creates a booking for the authenticated user's tenant. tenantId and createdById are NEVER read from this request body -- both come only from the verified session (see getCurrentUser() in lib/auth/current-user.ts). `status` is not accepted here either; new bookings always start as PENDING. Requires CREATE_BOOKINGS. Success: 201."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Booking by ID",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Get succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Fetches one booking by id, using the {{bookingId}} saved by 'Create Booking'. Requires VIEW_BOOKINGS. If the id belongs to a different tenant, this returns 404 NOT_FOUND rather than 403 -- the API never reveals that a row exists under another tenant."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Booking (PATCH)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Update succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test('Status was actually updated', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.data.status).to.eql('CONFIRMED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Updates the booking created above. All fields (title, description, startTime, endTime, status) are optional, but an empty body is rejected. Requires MANAGE_BOOKINGS (ADMIN/MANAGER only -- see 'Update Booking - Forbidden as Staff' in Validation & Errors for what happens when a STAFF user tries this)."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Booking",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Delete succeeds with 200', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Deletes the booking created above. Requires MANAGE_BOOKINGS. Running this request a second time with the same {{bookingId}} returns 404 NOT_FOUND rather than an error -- deleting an already-missing booking is safely repeatable."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Validation & Errors",
+      "item": [
+        {
+          "name": "Create Booking - Missing Idempotency-Key (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});",
+                  "pm.test('Error code is VALIDATION_ERROR', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.success).to.eql(false);",
+                  "    pm.expect(body.error.code).to.eql('VALIDATION_ERROR');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Should be rejected\",\n  \"startTime\": \"2026-10-01T10:00:00.000Z\",\n  \"endTime\": \"2026-10-01T10:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Deliberately omits the required Idempotency-Key header. Expected: 400, `error.code = \"VALIDATION_ERROR\"`, no booking created."
+          },
+          "response": []
+        },
+        {
+          "name": "Create Booking - Invalid Time Range (400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 400', function () {",
+                  "    pm.response.to.have.status(400);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"endTime before startTime\",\n  \"startTime\": \"2026-10-01T11:00:00.000Z\",\n  \"endTime\": \"2026-10-01T10:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "endTime is before startTime, which createBookingSchema's Zod refine() rejects. Expected: 400 VALIDATION_ERROR, with details pointing at the endTime field."
+          },
+          "response": []
+        },
+        {
+          "name": "List Bookings - Unauthenticated (401)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const jar = pm.cookies.jar();",
+                  "jar.unset(pm.variables.get('baseUrl'), 'session_token', function (error) {",
+                  "    if (error) {",
+                  "        console.log('Could not clear session_token cookie automatically:', error);",
+                  "        console.log('If this request does not return 401, clear the session_token cookie manually via the Cookies manager and re-run it.');",
+                  "    }",
+                  "});"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 401', function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});",
+                  "pm.test('Error code is UNAUTHENTICATED', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.error.code).to.eql('UNAUTHENTICATED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "The pre-request script below clears the session_token cookie for {{baseUrl}} before sending, so this request works regardless of whether you're logged in from an earlier request -- reliably demonstrating the unauthenticated path. Expected: 401, `error.code = \"UNAUTHENTICATED\"`. NOTE: pm.cookies.jar().unset() requires a reasonably modern Postman version (desktop app, v9.9+ roughly) -- if your version doesn't support it, clear the `session_token` cookie manually via Postman's Cookies manager before running this request instead."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Booking - Forbidden as Staff (403)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 403', function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});",
+                  "pm.test('Error code is FORBIDDEN', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.error.code).to.eql('FORBIDDEN');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"CONFIRMED\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Run 'Login - TechNova Staff (Sana Malik)' immediately before this request. Sana is in the SAME tenant as the booking referenced by {{bookingId}} (created earlier by Ayesha, also TechNova), so this specifically demonstrates a PERMISSION-based 403 -- STAFF has VIEW_BOOKINGS and CREATE_BOOKINGS but not MANAGE_BOOKINGS (lib/rbac.ts) -- rather than a tenant-mismatch 404. Expected: 403, `error.code = \"FORBIDDEN\"`."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Booking - Not Found (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 404', function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});",
+                  "pm.test('Error code is NOT_FOUND', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.error.code).to.eql('NOT_FOUND');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings/00000000-0000-4000-8000-000000000000",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings",
+                "00000000-0000-4000-8000-000000000000"
+              ]
+            },
+            "description": "A syntactically valid UUID that does not correspond to any real booking. Expected: 404, `error.code = \"NOT_FOUND\"`. This same response is returned whether an id has never existed or belongs to another tenant -- the API never distinguishes the two."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Idempotency",
+      "item": [
+        {
+          "name": "1. Create Booking - First Request (generates idempotencyKey)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idempotencyKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('First request creates with 201', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Booking id stored for comparison', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.collectionVariables.set('idempotencyDemoBookingId', body.data.id);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Idempotency demo booking\",\n  \"startTime\": \"2026-10-02T09:00:00.000Z\",\n  \"endTime\": \"2026-10-02T09:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "Run this request FIRST in this folder. Its pre-request script generates a brand-new key into the {{idempotencyKey}} collection variable, which the next two requests deliberately reuse. Expected: 201, a new booking is created, and its response (status + body) is stored server-side against this key."
+          },
+          "response": []
+        },
+        {
+          "name": "2. Replay Same Idempotency-Key + Same Payload",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Replay returns the original 201, not a new resource', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "pm.test('Replay returns the SAME booking id as request 1', function () {",
+                  "    const body = pm.response.json();",
+                  "    const originalId = pm.collectionVariables.get('idempotencyDemoBookingId');",
+                  "    pm.expect(body.data.id).to.eql(originalId);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Idempotency demo booking\",\n  \"startTime\": \"2026-10-02T09:00:00.000Z\",\n  \"endTime\": \"2026-10-02T09:30:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "SAME Idempotency-Key, SAME normalized payload as request 1. Run this request AS MANY TIMES AS YOU LIKE -- it must always return the ORIGINAL stored 201 response with the SAME booking id, and must never create a second booking. Verify this by re-running 'List Bookings' and confirming the total count did not increase."
+          },
+          "response": []
+        },
+        {
+          "name": "3. Reuse Idempotency-Key + Different Payload (409 Conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Rejected with 409', function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});",
+                  "pm.test('Error code is IDEMPOTENCY_KEY_CONFLICT', function () {",
+                  "    const body = pm.response.json();",
+                  "    pm.expect(body.success).to.eql(false);",
+                  "    pm.expect(body.error.code).to.eql('IDEMPOTENCY_KEY_CONFLICT');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"A completely different booking\",\n  \"startTime\": \"2026-10-03T14:00:00.000Z\",\n  \"endTime\": \"2026-10-03T15:00:00.000Z\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/bookings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bookings"
+              ]
+            },
+            "description": "SAME Idempotency-Key as requests 1 and 2, but a DIFFERENT payload (different title and time range). This is the documented client-bug/misuse case: reusing a key for a genuinely different logical request. Expected: 409, `error.code = \"IDEMPOTENCY_KEY_CONFLICT\"`, and no new booking is created."
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    },
+    {
+      "key": "devPassword",
+      "value": "Password123!",
+      "description": "The fixed development password baked into prisma/seed.ts (DEV_PASSWORD_HASH) for every seeded user. Not a production secret -- it already exists in plain text in this repo's own scripts/test-auth.ts and scripts/test-idempotency.ts. Change this variable if you reseed with a different password."
+    },
+    {
+      "key": "bookingId",
+      "value": "",
+      "description": "Populated automatically by the test script on 'Create Booking'. Used by Get/Update/Delete requests."
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "",
+      "description": "Populated automatically by the pre-request script on the first request in the Idempotency folder. Reused by the Replay and Conflict requests to demonstrate real idempotency behavior."
+    },
+    {
+      "key": "idempotencyDemoBookingId",
+      "value": ""
+    }
+  ]
+}
