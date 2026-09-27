@@ -1,10 +1,26 @@
 # Multi-Tenant Booking
 
-A Week 1 internship project: a multi-tenant booking application built with Next.js, Prisma, and PostgreSQL Row-Level Security (RLS) for database-enforced tenant isolation.
+A multi-tenant booking application built with Next.js, Prisma, and PostgreSQL Row-Level Security (RLS) for database-enforced tenant isolation. Originally a Week 1 internship project; now includes Week 2's real authentication, idempotent booking APIs, and a working booking UI.
 
-## Week 1 Scope
+## Project Overview
 
-This repository currently implements the **data and security foundation** of the application: schema, migrations, seed data, RLS policies, a tenant-context helper, an RBAC permission model, and a validated (but non-functional) authentication UI. It does not yet include real authentication, sessions, or any API routes/server actions wired to the database. See "Authentication Status" and "Future Work" below for exactly what is and isn't implemented.
+Each organization ("tenant") gets an isolated workspace for managing bookings and staff. Tenant isolation is enforced at the PostgreSQL engine level via Row-Level Security, not just in application code, so a bug in application logic cannot leak one tenant's data into another's view. Authentication is real, server-side, cookie-based sessions — no JWT, no third-party auth framework. Booking creation is idempotent, protected by a database-level unique constraint rather than application-only bookkeeping.
+
+## Week 1 Foundation
+
+Week 1 established the data and security foundation: schema (`Tenant`, `Role`, `User`, `Booking`), migrations, seed data, PostgreSQL RLS on `users`/`bookings`, a transaction-scoped tenant-context helper (`withTenantContext`), an RBAC permission model (`lib/rbac.ts`), and a validated Tailwind auth UI (`/login`, `/register`, `/onboarding`, `/forgot-password`). At that stage, `/register` and `/onboarding` accepted input and validated it client-side but had no real backend behind them, and there was no real login yet.
+
+## Week 2 Features
+
+- Real server-side, cookie-based session authentication (`POST /api/auth/login`, `POST /api/auth/logout`)
+- Five idempotent, tenant-isolated booking API endpoints under `/api/bookings`
+- Strict Zod validation on every booking request (create, update, list filters, route id)
+- A standard, consistent API success/error response format across every endpoint
+- `Idempotency-Key`-protected booking creation, backed by a database unique constraint and a `SECURITY DEFINER`-free, RLS-protected `idempotency_keys` table
+- A Postman collection covering authentication, booking CRUD, validation/error cases, and idempotency replay/conflict behavior
+- A responsive booking calendar/list UI, create/edit forms, booking detail view, delete-with-confirmation, toast notifications, retry buttons, and automatic redirect-to-login on session expiry
+
+`/register` and `/onboarding` remain demo UI — this was intentionally out of scope for Week 2 (see "Known Limitations" below).
 
 ## Technology Stack
 
@@ -19,69 +35,100 @@ Based on `package.json`:
 | prisma / @prisma/client | ^7.10.0 | ORM |
 | @prisma/adapter-pg | ^7.10.0 | Prisma driver adapter for `pg` |
 | pg | ^8.23.0 | PostgreSQL driver |
-| zod | ^4.6.5 | Environment + form validation |
-| bcryptjs | ^3.0.3 | Password hashing used by the seed data; real authentication is future work |
+| zod | ^4.6.5 | Environment, session/session-header, and booking request validation |
+| bcryptjs | ^3.0.3 | Password hashing, used by both the seed data and real login password verification |
 | dotenv | ^17.4.2 | Loads `.env` for scripts |
-| tsx | ^4.23.13 (dev) | Runs TypeScript scripts (seed, RLS test) |
+| tsx | ^4.23.13 (dev) | Runs TypeScript scripts (seed, tests) |
 
-PostgreSQL 16 (`postgres:16-alpine`) runs via Docker Compose.
+PostgreSQL 16 (`postgres:16-alpine`) runs via Docker Compose. No new dependency (e.g. `react-hook-form`, a calendar library, a toast library) was added for Week 2 — forms use plain `useState`, and toasts are a small hand-rolled context provider, consistent with the project's existing minimal-dependency approach.
 
 ## Project Structure
 
 ```text
 app/
-  page.tsx                  Landing page
-  login/page.tsx             Login UI (demo — see Authentication Status)
-  register/page.tsx          Register UI (demo)
-  onboarding/page.tsx        Organization onboarding UI (demo)
-  forgot-password/page.tsx   Password reset request UI (demo)
-components/auth/             Shared auth UI building blocks
+  page.tsx                        Landing page
+  login/page.tsx                   Real login UI, calls POST /api/auth/login
+  register/page.tsx                Register UI (demo — see Known Limitations)
+  onboarding/page.tsx               Organization onboarding UI (demo)
+  forgot-password/page.tsx         Password reset request UI (demo)
+  dashboard/
+    layout.tsx                      Shared authenticated shell (header, logout, toast provider)
+    page.tsx                        Post-login landing page
+    bookings/
+      page.tsx                      Booking calendar/list
+      new/page.tsx                  Create booking
+      [id]/page.tsx                 Booking detail
+      [id]/edit/page.tsx            Edit booking
+  api/
+    auth/login/route.ts             POST /api/auth/login
+    auth/logout/route.ts            POST /api/auth/logout
+    bookings/route.ts                GET (list) + POST (create, idempotent)
+    bookings/[id]/route.ts           GET / PATCH / DELETE one booking
+components/
+  auth/                             AuthShell, FormField, SubmitButton, icons, LogoutButton
+  bookings/                         BookingsBrowser, BookingForm, EditBookingForm, BookingDetail,
+                                     BookingStatusBadge, ConfirmDialog
+  ui/Toast.tsx                       Toast provider/hook
 lib/
-  env.server.ts               Zod-validated environment variables
-  prisma.ts                   Shared Prisma client (connects as app_user)
-  tenant-context.ts           withTenantContext() helper
-  rbac.ts                     Permission / role model
-  auth/current-user.ts        Placeholder seam for future session lookup
-  validation/auth.ts          Zod schemas for the auth forms
+  env.server.ts                      Zod-validated environment variables
+  prisma.ts                          Shared Prisma client (connects as app_user)
+  session.ts                         Session creation/lookup/invalidation
+  tenant-context.ts                  withTenantContext() helper
+  rbac.ts                            Permission / role model + requirePermission()
+  auth/current-user.ts               getCurrentUser(), UnauthenticatedError
+  validation/auth.ts                 Zod schemas for the auth forms
+  validation/bookings.ts             Zod schemas for booking create/update/list/id
+  validation/idempotency.ts          Zod schema for the Idempotency-Key header
+  api/errors.ts                      Standard response helpers + error-to-HTTP mapping
+  api/idempotency.ts                 hashBookingRequest() + createIdempotentBooking()
+  api/booking-client.ts              Browser-side fetch helpers used by the frontend
 prisma/
-  schema.prisma                Data model
-  seed.ts                      Seed script
+  schema.prisma                      Data model (Tenant, Role, User, Booking, Session, IdempotencyKey)
+  seed.ts                            Seed script
   migrations/
-    20260918112814_init_multi_tenant_foundation/    Schema + RLS policies
-    20260918201832_grant_app_user_table_privileges/ app_user grants
-docker-compose.yml             PostgreSQL 16 service definition
-docker/initdb/
-  01-create-app-role.sh        Creates app_user on a fresh volume only
+    20260918112814_init_multi_tenant_foundation/       Schema + RLS policies (users, bookings)
+    20260918201832_grant_app_user_table_privileges/     app_user grants (tenants/roles/users/bookings)
+    20260924080000_add_sessions_table/                  Session table (no RLS — see below)
+    20260924081500_add_login_lookup_function/           find_user_for_login() SECURITY DEFINER function
+    20260925090000_add_idempotency_keys_table/          idempotency_keys table + RLS + narrow grants
+docker-compose.yml                   PostgreSQL 16 service definition
+docker/initdb/01-create-app-role.sh  Creates app_user on a fresh volume only
 scripts/
-  test-rls.ts                   RLS / tenant isolation test
+  test-rls.ts                        Tenant isolation test
+  test-auth.ts                       Session/login test
+  test-bookings.ts                   Booking data-layer + tenant-isolation test
+  test-idempotency.ts                Idempotency data-layer test
+  test-admin-client.ts               Test-only privileged connection, used only for test cleanup
+postman/
+  Multi-Tenant-Booking.postman_collection.json  Importable API collection
 ```
 
-## Data Model (ERD)
+## Architecture / Data Model
 
 ```mermaid
 erDiagram
-    TENANT ||--o{ USER : "has"
-    TENANT ||--o{ BOOKING : "has"
-    ROLE ||--o{ USER : "assigned to"
-    USER ||--o{ BOOKING : "creates (createdById)"
+    TENANT ||--o{ USER : has
+    TENANT ||--o{ BOOKING : has
+    ROLE ||--o{ USER : has
+    USER ||--o{ BOOKING : creates
 
     TENANT {
-        uuid id PK
+        string id
         string name
-        string slug UK
+        string slug
         datetime createdAt
         datetime updatedAt
     }
     ROLE {
-        uuid id PK
-        string name UK
+        string id
+        string name
         datetime createdAt
         datetime updatedAt
     }
     USER {
-        uuid id PK
-        uuid tenantId FK
-        uuid roleId FK
+        string id
+        string tenantId
+        string roleId
         string name
         string email
         string passwordHash
@@ -89,9 +136,9 @@ erDiagram
         datetime updatedAt
     }
     BOOKING {
-        uuid id PK
-        uuid tenantId FK
-        uuid createdById FK
+        string id
+        string tenantId
+        string createdById
         string title
         string description
         datetime startTime
@@ -102,35 +149,48 @@ erDiagram
     }
 ```
 
-`User` has a unique constraint on `(tenantId, email)` — the same email can exist in different tenants, but not twice within one tenant. `Booking.status` is a Postgres enum: `PENDING`, `CONFIRMED`, `CANCELLED`, `COMPLETED`.
+`id` fields are UUIDs (`@db.Uuid`). `Tenant.slug` and `Role.name` are unique. `User` has a unique constraint on `(tenantId, email)`. `Booking.status` is a Postgres enum: `PENDING`, `CONFIRMED`, `CANCELLED`, `COMPLETED`. Two additional models, `Session` and `IdempotencyKey`, support Week 2 and are described in their own sections below.
 
-## Tenant Isolation / Security Flow
+## Authentication & Session Security
+
+`POST /api/auth/login` validates credentials with Zod, looks up the user via `find_user_for_login(email)`, verifies the password with `bcryptjs`, creates a server-side session, and sets an httpOnly `session_token` cookie. It returns the same generic "Invalid email or password" error whether the email doesn't exist or the password is wrong. `POST /api/auth/logout` deletes the session and clears the cookie, and is safe to call repeatedly.
+
+- **Cookie contents**: an httpOnly cookie holds only an opaque, cryptographically random 256-bit token — never a JWT, never any user/tenant/role information. `sameSite=lax`, `secure` in production, 7-day expiry.
+- **Server-side storage**: only a SHA-256 hash of the token is stored, in the `Session` table. Reading that table alone never yields a usable, replayable token.
+- **Why `Session` has no RLS**: a session lookup must happen *before* the tenant is known — the tenant is what the lookup discovers. Safety instead comes from the token being a 256-bit random value looked up by exact match, and `app_user` only holding the privileges explicitly granted on this table.
+- **`getCurrentUser()`** (`lib/auth/current-user.ts`) reads the session cookie, looks it up (in two steps — see below), and returns `{ id, tenantId, roleName, email }`, or throws `UnauthenticatedError` if there is no valid session.
+- **Two-step session lookup**: `lookupSession()` first queries only the `sessions` table (no tenant context needed or available), and only after learning the tenant from that row does it call `withTenantContext(session.tenantId, ...)` to safely load the `User`/`Role` data, which *is* RLS-protected. A single joined query would have silently returned nothing, since no tenant context exists until the session itself reveals it.
+- **The login-lookup problem**: `users` has `FORCE ROW LEVEL SECURITY`, so a plain "find user by email" query with no tenant context would always return zero rows. Rather than weaken that policy, login calls `find_user_for_login(email)`, a `SECURITY DEFINER` SQL function owned by `booking_dev` (a superuser). `app_user` is granted `EXECUTE` on this one function only — it still cannot query `users` directly without tenant context for anything else.
+- **No new environment variable/secret was introduced** for sessions — the token already has 256 bits of true randomness before hashing.
+
+## Multi-Tenancy & PostgreSQL RLS
 
 ```mermaid
 flowchart TD
-    A["Application runtime (lib/prisma.ts) connects as app_user"] --> B["app_user is configured with NOBYPASSRLS"]
-    B --> C["withTenantContext(tenantId, callback) opens one Prisma transaction"]
-    C --> D["SELECT set_config('app.current_tenant_id', tenantId, true) — transaction-local, same tx"]
-    D --> E["Tenant query runs on the SAME transaction via the tx client"]
-    E --> F["PostgreSQL RLS policy checks: row.tenantId = current_setting('app.current_tenant_id', true)"]
-    F -->|context matches row| G["Row returned"]
-    F -->|context missing or different tenant| H["Row filtered out — 0 rows, not an error"]
+    A[App runtime] --> B[Connects as app_user]
+    B --> C[app_user has NOBYPASSRLS]
+    C --> D[withTenantContext starts a transaction]
+    D --> E[set_config app.current_tenant_id]
+    E --> F[Query runs on same transaction]
+    F --> G[PostgreSQL RLS checks tenantId]
+    G -->|Match| H[Row returned]
+    G -->|No match or no context| I[Row filtered out]
 ```
 
-This is enforced at the database engine level, on `users` and `bookings` only. `tenants` is intentionally not RLS-protected in this Week 1 architecture because it represents the organization/tenant directory rather than tenant-scoped application data. `roles` is also shared reference data, used the same way by every tenant.
+`lib/prisma.ts` connects as `app_user`, which is configured with `NOBYPASSRLS`. `withTenantContext(tenantId, callback)` opens a single Prisma transaction, runs `SELECT set_config('app.current_tenant_id', tenantId, true)` — transaction-local — and then runs the query using the same transaction client (`tx`). RLS on `users`, `bookings`, and (as of Week 2) `idempotency_keys` compares each row's `tenantId` against that setting: matching rows are returned, everything else is filtered out at the database level, returning zero rows rather than an error.
 
-## Database Roles
+`tenants` and `roles` are intentionally not RLS-protected: `tenants` is the organization directory itself, and `roles` is shared reference data used identically by every tenant.
 
 | Role | Used for | Can bypass RLS? |
 |---|---|---|
-| `booking_dev` | Prisma CLI migrations / database administration (`DATABASE_URL`) | Yes — superuser, by design, needed to create/alter tables |
+| `booking_dev` | Prisma CLI migrations / database administration (`DATABASE_URL`) | Yes — superuser, by design |
 | `app_user` | Application runtime + seed script (`APP_DATABASE_URL`) | No — configured with `NOBYPASSRLS` |
 
-Separating these matters because RLS is meaningless if the connection running normal queries can ignore it. `lib/prisma.ts` — the Prisma client used by the application runtime — connects through `APP_DATABASE_URL`, keeping normal application queries separate from the privileged migration role.
+Separating these matters because RLS is meaningless if the connection running normal queries can ignore it. `lib/prisma.ts` is hard-wired to `APP_DATABASE_URL`, so runtime code can never accidentally use the privileged migration role.
 
 ## RBAC
 
-Defined in `lib/rbac.ts`. Roles and permissions, as actually coded:
+Defined in `lib/rbac.ts`:
 
 | Role | Permissions |
 |---|---|
@@ -138,46 +198,96 @@ Defined in `lib/rbac.ts`. Roles and permissions, as actually coded:
 | `MANAGER` | `MANAGE_BOOKINGS`, `CREATE_BOOKINGS`, `VIEW_BOOKINGS` |
 | `STAFF` | `CREATE_BOOKINGS`, `VIEW_BOOKINGS` |
 
-`roleHasPermission()` and `requirePermission()` are authorization helper functions defined in `lib/rbac.ts`. RBAC is currently a foundation only: no API route or server action calls `requirePermission()` yet, because no such routes exist in the repository yet. As of Phase 2, it is connected to a live request path: every booking API route calls requirePermission() before performing its operation.
+`requirePermission(roleName, permission)` throws `ForbiddenError` (mapped to `403 FORBIDDEN`) if the role lacks the permission. As of Week 2, this is genuinely enforced on a live request path: every booking API route calls `requirePermission()`, using the role loaded from the verified session — never from client input — before performing its operation. The frontend also hides Edit/Delete controls for roles without `MANAGE_BOOKINGS`, but this is cosmetic only; the server-side check is what actually protects the data.
 
-## Authentication Status
+## Booking API Documentation
 
-Real, server-side, cookie-based session authentication now exists for `/login`. `/register`, `/onboarding`, and `/forgot-password` remain demo UI (client-side Zod validation, simulated success message) — building real account creation for those is out of scope for this phase.
+| Method | Path | Permission | Purpose |
+|---|---|---|---|
+| GET | `/api/bookings` | `VIEW_BOOKINGS` | List the caller's tenant's bookings (filters: `status`, `startDate`, `endDate`; paginated via `page`/`pageSize`) |
+| POST | `/api/bookings` | `CREATE_BOOKINGS` | Create a booking (idempotent — see below) |
+| GET | `/api/bookings/:id` | `VIEW_BOOKINGS` | Get one booking |
+| PATCH | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Update a booking |
+| DELETE | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Delete a booking |
 
-- `POST /api/auth/login` — validates credentials with Zod, looks up the user via `find_user_for_login()` (see "Session Security Design"), verifies the password with `bcryptjs`, creates a server-side session, and sets an httpOnly cookie. Returns the same generic "Invalid email or password" error whether the email doesn't exist or the password is wrong.
-- `POST /api/auth/logout` — deletes the server-side session and clears the cookie. Safe to call repeatedly.
-- `getCurrentUser()` (`lib/auth/current-user.ts`) now reads the session cookie, looks it up, and returns `{ id, tenantId, roleName, email }`, or throws `UnauthenticatedError` if there is no valid session. `AuthNotImplementedError` no longer exists.
-- `/dashboard` is a temporary placeholder authenticated page proving the flow works end-to-end — it is **not** the Week 2 booking dashboard.
+**Server-controlled fields**: `id`, `tenantId`, `createdById`, `createdAt`, `updatedAt` are never accepted from the client. `tenantId` and `createdById` come only from `getCurrentUser()`; `status` on create always defaults to `PENDING`. A booking id belonging to another tenant is invisible via RLS — the API always responds `404 NOT_FOUND`, never revealing that a row exists under a different tenant.
 
-**Known limitations:**
-- Only the four seeded Week 1 development users can log in; there is no real registration flow yet.
-- Login looks up by email only and returns the first match; if the same email were ever seeded in two different tenants (not the case today), only one would be reachable. A future "choose your organization" step would resolve this.
-- "Remember me" is captured by the form but does not yet change session length — every session is a flat 7-day expiry.
-- No brute-force/rate-limiting protection exists on the login endpoint yet.
-- Expired sessions are only cleaned up opportunistically on lookup, not by a scheduled job.
+Security flow per request:
 
-## Session Security Design
+```
+getCurrentUser()          -- userId + tenantId + role, from the verified session cookie
+        ↓
+requirePermission()       -- checks the role against the required Permission
+        ↓
+withTenantContext(user.tenantId, ...)  -- opens a transaction, sets app.current_tenant_id
+        ↓
+Prisma query (via tx)     -- runs inside that transaction
+        ↓
+PostgreSQL RLS            -- the actual enforcement layer
+```
 
-- **Cookie contents**: an httpOnly cookie (`session_token`) holds only an opaque, cryptographically random 256-bit token — never a JWT, never any user/tenant/role information. `sameSite=lax`, `secure` in production, 7-day expiry.
-- **Server-side storage**: only a SHA-256 hash of the token is stored, in a new `Session` table. Reading that table alone never yields a usable, replayable token.
-- **Why `Session` is not RLS-protected**: a session lookup has to happen *before* the tenant is known — the tenant is what the lookup discovers. RLS scoped by `app.current_tenant_id` would make that lookup impossible. Safety instead comes from the token being a 256-bit random value looked up by exact match, and `app_user` only holding the privileges explicitly granted on this table.
-- **The login-lookup problem**: `users` has `FORCE ROW LEVEL SECURITY`. A plain query for "find user by email" with no tenant context set would always return zero rows — that's the same guarantee `npm run test:rls` verifies ("no context → 0 users"), now working against login. Rather than weaken that policy, login calls `find_user_for_login(email)`, a `SECURITY DEFINER` SQL function owned by `booking_dev` (a superuser, which always bypasses RLS). `app_user` is granted `EXECUTE` on this one function only — it still cannot query `users` directly without tenant context for anything else. This is the standard PostgreSQL pattern for a narrow, auditable exception to RLS, rather than a blanket bypass.
-- **No new environment variable/secret was introduced.** The token is already 256 bits of true randomness before hashing, so it does not need a server-side pepper the way a low-entropy secret (like a password) would.
+## Idempotency
 
-## Client-Side Validation
+`POST /api/bookings` requires an `Idempotency-Key` header on every request.
 
-`lib/validation/auth.ts` defines four Zod schemas:
+| Situation | Behavior |
+|---|---|
+| Missing or empty header | `400 VALIDATION_ERROR` |
+| Header longer than 255 characters | `400 VALIDATION_ERROR` |
+| New key | Creates the booking, `201`, stores the response |
+| Same key, same tenant, same normalized payload | Returns the **original** stored `201` response; no new booking created |
+| Same key, same tenant, different normalized payload | `409 IDEMPOTENCY_KEY_CONFLICT`; no new booking created |
+| Same key, different tenant | Independent key (unique constraint is `(tenantId, key)`) |
 
-- `loginSchema` — email format, non-empty password, optional remember-me
-- `registerSchema` — full name, email, 8+ character password, confirm-password match
-- `onboardingSchema` — organization name, URL-safe slug (`^[a-z0-9]+(-[a-z0-9]+)*$`), admin name/email, password, confirm-password match
-- `forgotPasswordSchema` — email format only
+**Request hash**: SHA-256 of the validated, normalized payload only — `title` (trimmed), `description` (trimmed or `null`), `startTime`/`endTime` (ISO strings). Never includes `tenantId`, `createdById`, the key itself, or session data.
 
-Password confirmation mismatches and other cross-field rules use Zod's `.refine()` and report the error on the `confirmPassword` field specifically.
+**Transactional safety**: the booking and its idempotency record are created inside one transaction, protected by a `UNIQUE (tenantId, key)` constraint — the constraint, not application logic, is what makes concurrent duplicate requests safe. A losing insert fails with a unique-constraint violation, which rolls back its own booking insert too (same transaction); the loser then opens a fresh transaction to read whichever result the winner committed.
+
+`idempotency_keys` has RLS enabled and forced, scoped by `app.current_tenant_id` exactly like `bookings`. `app_user` is granted only `SELECT, INSERT` on it (narrower than `bookings`), since the application never updates or deletes an idempotency record.
+
+## Standard API Response Format
+
+Success:
+```json
+{ "success": true, "data": ... }
+```
+
+Error:
+```json
+{ "success": false, "error": { "code": "...", "message": "...", "details": ... } }
+```
+
+| Situation | Status | Code |
+|---|---|---|
+| Not logged in | 401 | `UNAUTHENTICATED` |
+| Invalid login credentials | 401 | `INVALID_CREDENTIALS` |
+| Logged in, lacks permission | 403 | `FORBIDDEN` |
+| Invalid body/params | 400 | `VALIDATION_ERROR` |
+| Booking not found / wrong tenant | 404 | `NOT_FOUND` |
+| Idempotency key reused with a different payload | 409 | `IDEMPOTENCY_KEY_CONFLICT` |
+| Unexpected error | 500 | `INTERNAL_ERROR` |
+
+Errors never expose stack traces, SQL details, password hashes, or session tokens (`lib/api/errors.ts`).
+
+## Frontend Booking UI
+
+- **`BookingsBrowser`** — a week-strip (previous/next/Today navigation) plus a day-grouped agenda list, or a toggle to an "All Bookings" view. Not a drag-and-drop calendar grid — a deliberate choice to avoid adding a calendar library (see Known Limitations).
+- **`BookingForm`** — shared by create and edit; client-side Zod validation (`createBookingSchema`/`updateBookingSchema`), inline field errors, and idempotency-key generation on create (a new key per distinct payload; the same key is reused automatically on retry of an unchanged submission).
+- **`BookingDetail`** — full booking view, with Edit/Delete shown only when the current role has `MANAGE_BOOKINGS`.
+- **`ConfirmDialog`** — used before delete.
+- **`Toast`** (`components/ui/Toast.tsx`) — success/error toasts on create, update, and delete.
+- Every data-fetching component has explicit loading, empty, and error states, with a Retry button on failure, and redirects to `/login` automatically if any request returns `401 UNAUTHENTICATED`.
+- Mentor feedback on the Week 1 auth UI was positive regarding the reusable `AuthShell`/`FormField` components, Zod validation, and overall UI cleanliness. Adopting `react-hook-form` was suggested as a possible future improvement — it is **not** currently used anywhere in the project; forms use plain `useState`.
+
+## Validation & Error Handling
+
+`lib/validation/bookings.ts` defines strict (`.strict()`) Zod schemas for create/update, rejecting any unexpected key outright (this is what stops a client from sending `tenantId` or `createdById`, independent of the route handlers never reading those fields anyway). `lib/validation/idempotency.ts` validates the `Idempotency-Key` header (non-empty, ≤255 characters). `lib/validation/auth.ts` covers the four auth forms, unchanged since Week 1.
+
+## Postman Collection
+
+`postman/Multi-Tenant-Booking.postman_collection.json` covers Authentication (login as an ADMIN and a STAFF user, logout), Bookings (full CRUD), Validation & Errors (missing idempotency key, invalid time range, unauthenticated, forbidden-as-staff, not-found), and Idempotency (first request, same-key replay, same-key-different-payload conflict). Uses the project's real cookie-based session auth via Postman's built-in cookie jar — no Bearer token or API key. Import it into Postman, run `npm run dev` first, log in via the Authentication folder, then run the other folders in order.
 
 ## Environment Variables
-
-Documented by name only — real values live in your local `.env` (git-ignored) and are validated at startup by `lib/env.server.ts`.
 
 | Variable | Purpose |
 |---|---|
@@ -190,25 +300,19 @@ Documented by name only — real values live in your local `.env` (git-ignored) 
 | `APP_DB_PASSWORD` | Application role password |
 | `APP_DATABASE_URL` | Connection string for `app_user` — used by the app runtime and the seed script |
 
-`lib/env.server.ts` validates all eight with Zod at import time (`POSTGRES_PORT` as an integer 1–65535, both URLs as valid URL strings) and throws a clear error listing exactly which variable is missing or malformed if validation fails.
+No new environment variables were introduced for Week 2's sessions or idempotency. `lib/env.server.ts` validates all eight with Zod at import time.
 
-## Docker PostgreSQL Setup
+## Docker/PostgreSQL Setup
 
-`docker-compose.yml` runs a single `postgres:16-alpine` service (`multi-tenant-booking-db`) with a persistent named volume (`multi-tenant-booking-postgres-data`) and a healthcheck.
-
-### Fresh Clone / New Volume
+`docker-compose.yml` runs a single `postgres:16-alpine` service with a persistent named volume and a healthcheck.
 
 ```bash
 docker compose up -d
 ```
 
-When PostgreSQL initializes a new/empty data volume, it automatically runs every script in `docker/initdb/` exactly once. `01-create-app-role.sh` creates the `app_user` role (`LOGIN`, `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS`) using `APP_DB_USER`/`APP_DB_PASSWORD` from `.env`. This behavior is based on how the official PostgreSQL Docker image documents `docker-entrypoint-initdb.d`; it has not yet been separately verified in this repository against a true fresh-clone, fresh-volume run.
+On a genuinely new/empty volume, Postgres runs `docker/initdb/01-create-app-role.sh` exactly once, creating `app_user` (`LOGIN`, `NOSUPERUSER`, `NOCREATEDB`, `NOCREATEROLE`, `NOBYPASSRLS`). On an existing volume, this script is skipped entirely — no effect on an already-running setup. This fresh-volume behavior has not been separately verified in this repository against a true fresh-clone run.
 
-### Existing Volume
-
-PostgreSQL skips `docker/initdb/` entirely once a data directory already contains a database, so this script has no effect on an already-running setup.
-
-## Setup Commands
+## Setup Instructions
 
 ```bash
 npm install
@@ -218,152 +322,71 @@ npx prisma db seed
 npm run dev
 ```
 
-`npx prisma migrate dev` applies both migrations in order: the initial schema + RLS policies, then the `app_user` table-privilege grants (`GRANT SELECT, INSERT, UPDATE, DELETE` on `tenants`, `roles`, `users`, `bookings`).
+`npx prisma migrate dev` applies all five migrations in order (see Project Structure above): the initial schema + RLS, `app_user` table grants, the `Session` table, the `find_user_for_login()` function, and the `idempotency_keys` table + its RLS + grants.
 
-## Seed Data
+## Seed Data / Development Credentials
 
-`prisma/seed.ts` connects as `app_user` (`APP_DATABASE_URL`) and uses fixed UUIDs with `upsert`, so it is safe to run repeatedly. Actual seeded data:
+`prisma/seed.ts` connects as `app_user` and uses fixed UUIDs with `upsert`, safe to run repeatedly:
 
 - **3 roles**: ADMIN, MANAGER, STAFF
 - **3 tenants**: TechNova Solutions, Lahore Creative Studio, Pakistan Business Consultants
-- **7 users** across the three tenants (3 for TechNova, 2 for Lahore Creative, 2 for Pakistan Business Consultants)
-- **6 bookings** (2 per tenant), with statuses spanning `PENDING`, `CONFIRMED`, `COMPLETED`, and `CANCELLED`
+- **7 users** across the three tenants (3 TechNova, 2 Lahore Creative, 2 Pakistan Business Consultants)
+- **6 bookings** (2 per tenant), statuses spanning `PENDING`, `CONFIRMED`, `COMPLETED`, `CANCELLED`
 
-All seeded users share one development password hash generated from a fixed placeholder password — this exists only to satisfy the `passwordHash` NOT NULL column and has no relationship to real authentication, which is not implemented.
+All seeded users share one fixed development password hash (`Password123!`), used only to satisfy the `passwordHash` NOT NULL column and for local login testing — not a production credential. Since `/register` has no real backend yet, **only these seeded users can log in**; there is no self-serve account creation.
 
-Users and bookings are inserted using `withTenantContext(tenantId, ...)` so each insert passes the same RLS policies that runtime queries would.
-
-## Testing Tenant Isolation
-
-```bash
-npm run test:rls
-```
-
-Runs `scripts/test-rls.ts`, which connects as `app_user` (never `booking_dev`, since that role bypasses RLS) and verifies:
-
-- No tenant context set → 0 users, 0 bookings visible
-- TechNova Solutions context → exactly 3 users, 2 bookings visible
-- Lahore Creative Studio context → exactly 2 users, 2 bookings visible
-- While scoped to TechNova, explicitly querying for Lahore Creative's `tenantId` returns 0 rows
-
-## Testing Authentication
-
-```bash
-npm run test:auth
-```
-
-Runs `scripts/test-auth.ts`, using the same `find_user_for_login()` path the real login route uses (not a plain Prisma query, which RLS would block the same way it would in production). Verifies:
-
-- The seeded TechNova admin can be found and their role resolves
-- The correct development password verifies; a wrong password is rejected
-- A successful "login" creates a session whose lookup returns the expected `userId`, `tenantId`, `roleName`, and `email`
-- An invalid/garbage token is rejected
-- An expired session is rejected
-- Logout invalidates the session, and calling logout again does not throw
-
-`getCurrentUser()` itself reads Next.js's request-scoped `cookies()` API and can only run inside a real request, so it isn't covered by this script — verify it manually: run `npm run dev`, log in at `/login` with a seeded user, confirm you land on `/dashboard` showing the correct email/tenant/role, then log out and confirm you're redirected back to `/login`.
-
-## Booking APIs (Week 2, Phase 2)
-
-Five REST endpoints under `/api/bookings`, all requiring a valid session (`getCurrentUser()`) and the matching RBAC permission (`lib/rbac.ts`).
-
-| Method | Path | Permission | Purpose |
-|---|---|---|---|
-| GET | `/api/bookings` | `VIEW_BOOKINGS` | List the caller's tenant's bookings (filters: `status`, `startDate`, `endDate`; paginated via `page`/`pageSize`) |
-| POST | `/api/bookings` | `CREATE_BOOKINGS` | Create a booking |
-| GET | `/api/bookings/:id` | `VIEW_BOOKINGS` | Get one booking |
-| PATCH | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Update a booking |
-| DELETE | `/api/bookings/:id` | `MANAGE_BOOKINGS` | Delete a booking |
-
-**Server-controlled fields**: `id`, `tenantId`, `createdById`, `createdAt`, `updatedAt` are never accepted from the client. `tenantId` and `createdById` come only from the verified session; `status` on create always defaults to `PENDING`. Create/update request bodies are validated with `.strict()` Zod schemas (`lib/validation/bookings.ts`) that reject any unexpected key outright, rather than silently ignoring it.
-
-**Idempotency is not implemented in this phase.** Repeated `POST /api/bookings` calls currently create separate bookings. Idempotency keys are planned for Phase 3.
-
-### Security flow per request
-
-getCurrentUser() -- userId + tenantId + role, from the verified session cookie
-↓
-requirePermission() -- checks the role against the required Permission
-↓
-withTenantContext(user.tenantId, ...) -- opens a transaction, sets app.current_tenant_id
-↓
-Prisma query (via tx) -- runs inside that transaction
-↓
-PostgreSQL RLS -- the actual enforcement: rows outside the tenant are never returned
-
-Booking queries deliberately do not add an application-level `WHERE tenantId = ...` clause — isolation depends on PostgreSQL RLS, not on remembering to write that clause correctly in every handler. A booking id belonging to another tenant simply doesn't exist from the query's point of view; the API always responds `404 NOT_FOUND`, never revealing that a row exists under a different tenant.
-
-### Response format
-
-```json
-{ "success": true, "data": ... }
-```
-```json
-{ "success": false, "error": { "code": "...", "message": "...", "details": ... } }
-```
-
-| Situation | Status | Code |
-|---|---|---|
-| Not logged in | 401 | `UNAUTHENTICATED` |
-| Logged in, lacks permission | 403 | `FORBIDDEN` |
-| Invalid body/params | 400 | `VALIDATION_ERROR` |
-| Booking not found / wrong tenant | 404 | `NOT_FOUND` |
-| Unexpected error | 500 | `INTERNAL_ERROR` |
-
-### Testing
-
-```bash
-npm run test:bookings
-```
-
-Tests the data layer directly (not raw HTTP, matching `test:rls`/`test:auth`'s existing approach): confirms `createBookingSchema` rejects a client-supplied `tenantId`, confirms a booking created under Tenant A's context always gets `tenantId = Tenant A`, and confirms Tenant A/B cannot see each other's bookings. Creates and deletes one temporary booking, so it doesn't affect `test:rls`'s exact-count assertions regardless of run order.
-
-## Verification Commands
+## Testing & Verification Commands
 
 ```bash
 npx prisma validate
+npx prisma migrate status
 npx tsc --noEmit
 npm run lint
 npm run build
 npm run test:rls
 npm run test:auth
 npm run test:bookings
+npm run test:idempotency
 ```
 
-## Security Boundaries
+- `test:rls` — tenant isolation on `users`/`bookings` (exact seeded counts per tenant, cross-tenant queries return nothing).
+- `test:auth` — login lookup, password verification, session creation/lookup/expiry/logout, via the same two-step lookup path the app uses.
+- `test:bookings` — booking data-layer tenant isolation and server-controlled `tenantId`.
+- `test:idempotency` — data-layer idempotency: new-key creation, same-key replay, conflict on payload mismatch, cross-tenant independence, failed-create leaves no orphaned record, and genuine concurrency (5 simultaneous requests resolve to one booking).
 
-- RLS on `users`/`bookings`, enforced by PostgreSQL itself, is the actual security boundary — not application code.
-- `withTenantContext()` is a convention that makes the correct pattern easy; it does not prevent other code from querying `prisma` directly without it. If that happened, RLS still fails closed (0 rows), it does not leak data.
-- `app_user` is configured with `NOBYPASSRLS`, so the application runtime role cannot bypass PostgreSQL RLS.
-- `tenants` and `roles` are intentionally not RLS-protected (see "Tenant Isolation / Security Flow" above).
-- RBAC permission helpers are defined in `lib/rbac.ts`; they are not yet connected to a live authenticated request path.
+All four scripts test the **data layer** directly (not raw HTTP) — verify the actual HTTP/header-parsing behavior manually via the Postman collection or `npm run dev` + browser testing.
 
-## Week 1 Completion Checklist
+## Responsive UI
 
-- [x] Next.js App Router project with TypeScript + Tailwind CSS 4
-- [x] Zod-validated environment variables
-- [x] Docker Compose PostgreSQL 16 setup
-- [x] Schema: Tenant, User, Role, Booking
-- [x] Database migrations
-- [x] Realistic, repeatable seed data
-- [x] PostgreSQL RLS enforcing tenant isolation on `users` / `bookings`
-- [x] `app_user` role with `NOBYPASSRLS`, separate from the migration role
-- [x] Transaction-scoped tenant-context helper (`withTenantContext`)
-- [x] RBAC permission model (ADMIN/MANAGER/STAFF)
-- [x] Repeatable RLS isolation test (`npm run test:rls`)
-- [x] Tailwind auth UI: onboarding, login, register, forgot-password
-- [x] Client-side Zod validation on all four auth forms
-- [x] README documentation with Mermaid ERD and tenant-isolation/security flow
+The booking calendar/list, forms, and detail views use Tailwind's responsive utilities and have been manually tested across desktop, tablet, and mobile viewport widths, consistent with the existing dark, glassmorphic auth UI styling.
 
-## Future Work
+## Known Limitations / Future Improvements
 
-The following are explicitly not implemented and should not be assumed to exist:
+- `/register` and `/onboarding` remain demo UI only — no real account/organization creation backend (out of scope for Week 2).
+- Only the seeded development users can log in; login resolves by email only (if the same email were ever seeded across two tenants, only one would be reachable).
+- "Remember me" is captured by the login form but does not yet change session length (flat 7-day expiry for every session).
+- No rate limiting or brute-force protection on `/api/auth/login`.
+- Expired sessions are cleaned up opportunistically on lookup only, not by a scheduled job.
+- `BookingsBrowser` is a week-strip + agenda list, not a drag-and-drop calendar grid — adding a calendar library is a possible future addition, not adopted here to avoid an unnecessary dependency.
+- Adopting `react-hook-form` for form state (mentor suggestion) is a possible future improvement; not implemented.
+- No booking time-conflict/double-booking detection.
+- Idempotency and booking data-layer tests do not cover the real HTTP/header-parsing layer — only manual/Postman verification does.
 
-- Real organization/user/booking creation via API routes or server actions (registration/onboarding remain demo UI)
-- Idempotency for booking creation (Phase 3)
-- Booking calendar/list UI, create/edit/delete forms (later Week 2 phases)
-- Email delivery for password reset
-- Rate limiting / brute-force protection on login
-- Scheduled cleanup of expired sessions
-- Support for the same email existing in more than one tenant at login time
+## Week 2 Completion Checklist
 
+- [x] Idempotent booking CRUD APIs (list, get, create, update, delete)
+- [x] Strict Zod validation on all booking requests
+- [x] Standard, consistent API success/error response format
+- [x] Full error-code set including `IDEMPOTENCY_KEY_CONFLICT`
+- [x] Postman collection covering auth, booking CRUD, validation/errors, and idempotency
+- [x] Real server-side, cookie-based session authentication (login/logout)
+- [x] RBAC (`requirePermission`) enforced on every booking API route
+- [x] Tenant isolation enforced by PostgreSQL RLS, including the new `idempotency_keys` table
+- [x] Booking calendar/list UI with week and all-bookings views
+- [x] Create Booking form with client-side validation and idempotency-key handling
+- [x] Booking detail view
+- [x] Edit and delete flows, with delete confirmation
+- [x] Frontend API error handling with retry buttons and session-expiry redirect
+- [x] Toast notifications
+- [x] Mobile-responsive layout
+- [x] README updated comprehensively for Week 2

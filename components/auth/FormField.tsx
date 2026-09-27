@@ -43,7 +43,7 @@ export default function FormField({
           autoComplete={autoComplete}
           aria-invalid={!!error}
           aria-describedby={error ? `${id}-error` : undefined}
-          className={`w-full rounded-lg bg-white/[0.06] border ${
+          className={`w-full rounded-lg bg-white/6 border ${
             error ? "border-rose-400/70 animate-shake" : "border-white/15"
           } ${icon ? "pl-10" : "pl-3.5"} pr-3.5 py-2.5 text-sm text-white placeholder:text-slate-500
           focus:outline-none focus:ring-2 focus:ring-indigo-400/60 focus:border-indigo-400/60

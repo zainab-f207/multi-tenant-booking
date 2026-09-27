@@ -12,6 +12,7 @@ export type ApiErrorCode =
   | "INVALID_CREDENTIALS"
   | "FORBIDDEN"
   | "NOT_FOUND"
+  | "IDEMPOTENCY_KEY_CONFLICT"
   | "INTERNAL_ERROR";
 
 export class NotFoundError extends Error {
@@ -21,13 +22,21 @@ export class NotFoundError extends Error {
   }
 }
 
-
 export class ApiValidationError extends Error {
   details?: unknown;
   constructor(message: string, details?: unknown) {
     super(message);
     this.name = "ApiValidationError";
     this.details = details;
+  }
+}
+
+export class IdempotencyKeyConflictError extends Error {
+  constructor(
+    message = "This Idempotency-Key was already used with a different request."
+  ) {
+    super(message);
+    this.name = "IdempotencyKeyConflictError";
   }
 }
 
@@ -42,7 +51,6 @@ export function apiSuccess<T>(data: T, status = 200) {
 export function apiError(code: ApiErrorCode, message: string, status: number, details?: unknown) {
   return NextResponse.json({ success: false, error: { code, message, details } }, { status });
 }
-
 
 export function handleApiError(err: unknown) {
   if (err instanceof ZodError) {
@@ -63,6 +71,10 @@ export function handleApiError(err: unknown) {
 
   if (err instanceof NotFoundError) {
     return apiError("NOT_FOUND", err.message, 404);
+  }
+
+  if (err instanceof IdempotencyKeyConflictError) {
+    return apiError("IDEMPOTENCY_KEY_CONFLICT", err.message, 409);
   }
 
   console.error("Unhandled API error:", err);
