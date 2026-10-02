@@ -1,0 +1,1 @@
+GRANT SELECT, INSERT, UPDATE, DELETE ON "tenants" TO "app_user";

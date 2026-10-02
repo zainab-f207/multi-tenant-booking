@@ -1,0 +1,28 @@
+-- Grants app_user the schema-level USAGE privilege it needs to look
+-- up any object (table, function, etc.) inside the "public" schema.
+--
+-- WHY THIS IS NEEDED:
+-- "public" is normally pre-populated with USAGE for PUBLIC by
+-- Postgres's own database-creation machinery, but a schema recreated
+-- via an ordinary CREATE SCHEMA statement -- which is exactly what
+-- `prisma migrate reset` does when it drops and recreates the
+-- datasource's schema before replaying migrations -- gets Postgres's
+-- standard default ACL instead: full rights for the creator
+-- (booking_dev) only, nothing granted to any other role. Table-level
+-- grants (see 20260918201832_grant_app_user_table_privileges) are
+-- replayed correctly by migration history, but schema-level USAGE was
+-- never captured as a migration -- it previously existed only in
+-- docker/initdb/01-create-app-role.sh, which runs exactly once, only
+-- on a brand-new/empty Postgres data volume, and is skipped by
+-- `migrate reset`'s schema drop/recreate.
+--
+-- This migration makes that grant part of the versioned, replayable
+-- migration history, so it survives `migrate reset`, `migrate
+-- deploy`, and any future fresh clone -- independent of whether the
+-- Docker init script has ever run.
+--
+-- Does not touch RLS, policies, roles, or any table-level grant --
+-- app_user still cannot bypass RLS and still only has the table
+-- privileges already granted in the earlier migration.
+
+GRANT USAGE ON SCHEMA public TO "app_user";

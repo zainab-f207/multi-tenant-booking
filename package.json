@@ -11,8 +11,9 @@
     "test:rls": "tsx scripts/test-rls.ts",
     "test:auth": "tsx scripts/test-auth.ts",
     "test:bookings": "tsx scripts/test-bookings.ts",
-    "test:idempotency": "tsx scripts/test-idempotency.ts"
-  },
+    "test:idempotency": "tsx scripts/test-idempotency.ts",
+    "test:tenant-security": "tsx scripts/test-tenant-security.ts"
+    },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.0",
     "@prisma/client": "^7.10.0",
