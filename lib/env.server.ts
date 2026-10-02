@@ -11,6 +11,10 @@ const envSchema = z.object({
   POSTGRES_DB: z.string().min(1, "POSTGRES_DB is required"),
   POSTGRES_USER: z.string().min(1, "POSTGRES_USER is required"),
   POSTGRES_PASSWORD: z.string().min(1, "POSTGRES_PASSWORD is required"),
+  STRIPE_SECRET_KEY: z.string().optional(),
+  STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  STRIPE_PRICE_ID_BASIC: z.string().optional(),
+  STRIPE_PRICE_ID_PRO: z.string().optional(),
 
   POSTGRES_PORT: z.coerce
     .number({ message: "POSTGRES_PORT must be a number" })

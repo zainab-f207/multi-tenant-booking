@@ -390,3 +390,12 @@ The booking calendar/list, forms, and detail views use Tailwind's responsive uti
 - [x] Toast notifications
 - [x] Mobile-responsive layout
 - [x] README updated comprehensively for Week 2
+
+## Week 3 (in progress): Billing Foundation
+Phase 2 adds the billing database foundation only — no checkout, webhook, or
+UI yet. New tables: `TenantBillingAccount`, `Subscription`, `Invoice` (RLS
+enabled + forced, same tenant-isolation pattern as `bookings`), and
+`ProcessedStripeEvent` (no RLS — see architecture notes). New permissions:
+`VIEW_BILLING`, `MANAGE_BILLING`. Stripe env vars (`STRIPE_SECRET_KEY`,
+`STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_BASIC`, `STRIPE_PRICE_ID_PRO`) are
+optional for local dev — see `.env.example`.

@@ -27,6 +27,9 @@ model Tenant {
   bookings        Booking[]
   sessions        Session[]
   idempotencyKeys IdempotencyKey[]
+  billingAccount TenantBillingAccount?
+  subscription   Subscription?
+  invoices       Invoice[]
 
   @@map("tenants")
 }
@@ -117,3 +120,80 @@ model IdempotencyKey {
   @@map("idempotency_keys")
 }
 
+enum SubscriptionStatus {
+  INCOMPLETE
+  INCOMPLETE_EXPIRED
+  TRIALING
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  PAUSED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  OPEN
+  PAID
+  UNCOLLECTIBLE
+  VOID
+}
+
+model TenantBillingAccount {
+  id               String   @id @default(uuid()) @db.Uuid
+  tenantId         String   @unique @db.Uuid
+  stripeCustomerId String   @unique
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_billing_accounts")
+}
+
+model Subscription {
+  id                   String             @id @default(uuid()) @db.Uuid
+  tenantId             String             @unique @db.Uuid
+  stripeSubscriptionId String             @unique
+  stripePriceId        String
+  planKey               String
+  status                SubscriptionStatus
+  currentPeriodEnd      DateTime
+  cancelAtPeriodEnd     Boolean            @default(false)
+  lastStripeEventAt     DateTime
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("subscriptions")
+}
+
+model Invoice {
+  id               String        @id @default(uuid()) @db.Uuid
+  tenantId         String        @db.Uuid
+  stripeInvoiceId  String        @unique
+  amountPaid       Int           // minor units (cents) — matches Stripe's own representation
+  currency         String
+  status           InvoiceStatus
+  hostedInvoiceUrl String?
+  periodStart      DateTime
+  periodEnd        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@map("invoices")
+}
+
+model ProcessedStripeEvent {
+  id            String   @id @default(uuid()) @db.Uuid
+  stripeEventId String   @unique
+  type          String
+  processedAt   DateTime @default(now())
+
+  @@map("processed_stripe_events")
+}

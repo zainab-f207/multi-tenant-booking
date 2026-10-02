@@ -6,6 +6,8 @@ export enum Permission {
   MANAGE_BOOKINGS = "MANAGE_BOOKINGS",
   CREATE_BOOKINGS = "CREATE_BOOKINGS",
   VIEW_BOOKINGS = "VIEW_BOOKINGS",
+  VIEW_BILLING = "VIEW_BILLING",
+  MANAGE_BILLING = "MANAGE_BILLING"
 }
 
 export type RoleName = "ADMIN" | "MANAGER" | "STAFF";
@@ -18,11 +20,14 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     Permission.MANAGE_BOOKINGS,
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
+    Permission.VIEW_BILLING,
+    Permission.MANAGE_BILLING
   ],
   MANAGER: [
     Permission.MANAGE_BOOKINGS,
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
+    Permission.VIEW_BILLING
   ],
   STAFF: [Permission.CREATE_BOOKINGS, Permission.VIEW_BOOKINGS],
 };
@@ -47,3 +52,4 @@ export function requirePermission(roleName: string, permission: Permission): voi
     );
   }
 }
+
