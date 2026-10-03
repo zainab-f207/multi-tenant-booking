@@ -399,3 +399,49 @@ enabled + forced, same tenant-isolation pattern as `bookings`), and
 `VIEW_BILLING`, `MANAGE_BILLING`. Stripe env vars (`STRIPE_SECRET_KEY`,
 `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_BASIC`, `STRIPE_PRICE_ID_PRO`) are
 optional for local dev — see `.env.example`.
+
+## Week 3 Phase 3: Checkout Backend
+
+### `POST /api/billing/checkout`
+- **Auth**: required (session cookie); returns `401` if unauthenticated
+- **Permission**: `MANAGE_BILLING` (ADMIN only; MANAGER/STAFF get `403`)
+- **Request body**: `{ "planKey": "basic" | "pro" }` — nothing else is accepted;
+  any other field (including a `tenantId` or `stripePriceId`) causes a `400`
+- **Tenant**: always the authenticated session's tenant — never read from the request
+- **Behavior**: ensures a Stripe Customer exists for the tenant (reusing one
+  if present), creates a subscription-mode Checkout Session for the
+  server-resolved price, returns `{ url }`
+- **Response codes**: `401` unauthenticated, `403` wrong role, `400` invalid
+  `planKey`, `500` unexpected billing/Stripe failure (message is generic;
+  real error is logged server-side only)
+
+### Distributed-consistency limitation (documented, not hidden)
+PostgreSQL's `UNIQUE` constraint on `TenantBillingAccount.tenantId` guarantees
+exactly one billing-account row per tenant, and concurrent requests safely
+recover by reusing whichever row wins that constraint. This does **not**
+guarantee exactly one Stripe Customer object exists in Stripe under every
+concurrent scenario: if two requests for the same tenant both reach Stripe
+before either commits to the database, Stripe may end up holding two Customer
+objects, and only the one referenced by the winning database row is ever
+used by the application. The other becomes a harmless, unused orphan.
+Automatic detection or cleanup of that orphan is explicitly out of scope for
+Phase 3.
+
+### Environment
+New: `APP_BASE_URL` (server-only, defaults to `http://localhost:3000`).
+Existing Stripe vars (`STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID_BASIC`,
+`STRIPE_PRICE_ID_PRO`) remain optional for local dev — only required to
+actually exercise checkout.
+
+### Testing
+`npm run test:billing-checkout` — validation, RBAC, and Stripe
+customer/checkout logic, all against a fake injected Stripe client (no real
+Stripe account needed, no network calls). Full HTTP-level auth (401 for no
+session) is not covered by this script; recommended manual check: start
+`npm run dev`, call `POST /api/billing/checkout` with no cookie (expect 401),
+then as STAFF/MANAGER (expect 403), then as ADMIN with Stripe test-mode keys
+configured (expect a real `checkout.stripe.com` URL).
+
+### Not yet implemented
+Webhooks, pricing UI, billing history UI, Customer Portal, upgrade/downgrade —
+later phases.

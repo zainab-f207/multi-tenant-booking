@@ -15,6 +15,7 @@ const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_PRICE_ID_BASIC: z.string().optional(),
   STRIPE_PRICE_ID_PRO: z.string().optional(),
+  APP_BASE_URL: z.string().optional(),
 
   POSTGRES_PORT: z.coerce
     .number({ message: "POSTGRES_PORT must be a number" })
