@@ -23,4 +23,12 @@ export interface StripeCheckoutClient {
   };
 }
 
+export interface StripeBillingPortalClient {
+  billingPortal: {
+    sessions: {
+      create(params: { customer: string; return_url: string }): Promise<{ id: string; url: string }>;
+    };
+  };
+}
+
 export type StripeBillingClient = StripeCustomerClient & StripeCheckoutClient;

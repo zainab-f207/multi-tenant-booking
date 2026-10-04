@@ -5,6 +5,7 @@ import { ZodError } from "zod";
 import { UnauthenticatedError } from "../auth/current-user";
 import { ForbiddenError } from "../rbac";
 import { Prisma } from "../../generated/prisma/client";
+import { BillingConfigurationError } from "../billing/errors";
 
 export type ApiErrorCode =
   | "VALIDATION_ERROR"
@@ -13,6 +14,7 @@ export type ApiErrorCode =
   | "FORBIDDEN"
   | "NOT_FOUND"
   | "IDEMPOTENCY_KEY_CONFLICT"
+  | "BILLING_UNAVAILABLE"
   | "INTERNAL_ERROR";
 
 export class NotFoundError extends Error {
@@ -75,6 +77,10 @@ export function handleApiError(err: unknown) {
 
   if (err instanceof IdempotencyKeyConflictError) {
     return apiError("IDEMPOTENCY_KEY_CONFLICT", err.message, 409);
+  }
+
+  if (err instanceof BillingConfigurationError) {
+    return apiError("BILLING_UNAVAILABLE", err.message, 503);
   }
 
   console.error("Unhandled API error:", err);

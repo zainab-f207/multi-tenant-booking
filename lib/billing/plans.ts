@@ -1,4 +1,6 @@
 
+import { BillingConfigurationError } from "./errors";
+
 export const PLAN_KEYS = ["basic", "pro"] as const;
 export type PlanKey = (typeof PLAN_KEYS)[number];
 
@@ -15,7 +17,7 @@ interface PlanConfig {
 function requirePriceEnv(varName: string): string {
   const value = process.env[varName];
   if (!value) {
-    throw new Error(`Missing ${varName}. Set it in .env to use the "${varName}" plan.`);
+    throw new BillingConfigurationError();
   }
   return value;
 }

@@ -3,8 +3,18 @@ import Link from "next/link";
 import { ToastProvider } from "@/components/ui/Toast";
 import LogoutButton from "@/components/auth/LogoutButton";
 import { CalendarIcon } from "@/components/auth/icons";
+import { getCurrentUser, UnauthenticatedError } from "@/lib/auth/current-user";
+import { Permission, roleHasPermission } from "@/lib/rbac";
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  let canViewBilling = false;
+  try {
+    const user = await getCurrentUser();
+    canViewBilling = roleHasPermission(user.roleName, Permission.VIEW_BILLING);
+  } catch (err) {
+    if (!(err instanceof UnauthenticatedError)) throw err;
+  }
+
   return (
     <ToastProvider>
       <div className="min-h-screen bg-slate-950">
@@ -18,6 +28,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link href="/dashboard/bookings" className="text-slate-300 hover:text-white">
                 Bookings
               </Link>
+              {canViewBilling && (
+                <Link href="/dashboard/billing" className="text-slate-300 hover:text-white">
+                  Billing
+                </Link>
+              )}
               <div className="w-24">
                 <LogoutButton />
               </div>
