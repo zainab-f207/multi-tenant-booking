@@ -459,7 +459,11 @@ Only users with the `MANAGE_BILLING` permission can create checkout sessions.
 
 The client cannot choose another tenant's ID.
 
-The Billing UI calls `POST /api/billing/checkout` only after the user explicitly selects a plan. Opening the Billing page does not automatically create a Checkout Session. When Stripe is not configured locally, the endpoint returns a sanitized configuration-related `503`, and the frontend displays a user-friendly message instead of exposing server errors.
+The Billing UI calls `POST /api/billing/checkout` only after the user explicitly selects a plan. Opening the Billing page does not automatically create a Checkout Session.
+
+If the required Stripe configuration is missing, the endpoint returns a sanitized HTTP `503 Service Unavailable` response. The frontend displays a friendly configuration message instead of exposing internal server errors.
+
+Stripe Price IDs are resolved on the server, and Checkout success alone does not mean the subscription is active in the local database. The application relies on verified Stripe webhooks to synchronize subscription state.
 
 ---
 
@@ -1050,9 +1054,11 @@ If real Stripe credentials are not configured, the real Stripe API portion is sk
 npm run test:stripe-webhook
 ```
 
-Tests webhook processing, event mapping, stale-event protection, duplicate handling, and tenant isolation.
+This test verifies application-level webhook processing, including event mapping, duplicate handling, stale-event protection, and tenant isolation. Local signature tests verify the application's signature-validation behavior using test secrets; they do not prove that Stripe delivered an event to the application.
 
-Local automated tests verify the application's webhook signature handling and event processing, using locally configured test secrets when available. They test application-level behavior; they do not represent an event delivered by Stripe. Testing a real Stripe-delivered event requires external webhook infrastructure, such as the Stripe CLI or a real Stripe test account. The webhook implementation is complete; only external Stripe delivery could not be tested locally.
+Actual external testing requires Stripe test-mode credentials and a configured webhook endpoint. A tool such as the Stripe CLI can forward events from Stripe to the local application. Real Stripe-hosted Checkout/API testing and a webhook actually delivered by Stripe were not completed locally.
+
+The Stripe integration itself is implemented. The limitation concerns external end-to-end verification, not completion of the application's billing implementation.
 
 ### Subscription
 
