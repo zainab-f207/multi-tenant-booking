@@ -7,7 +7,8 @@ export enum Permission {
   CREATE_BOOKINGS = "CREATE_BOOKINGS",
   VIEW_BOOKINGS = "VIEW_BOOKINGS",
   VIEW_BILLING = "VIEW_BILLING",
-  MANAGE_BILLING = "MANAGE_BILLING"
+  MANAGE_BILLING = "MANAGE_BILLING",
+  EDIT_BOOKING_NOTES = "EDIT_BOOKING_NOTES",
 }
 
 export type RoleName = "ADMIN" | "MANAGER" | "STAFF";
@@ -21,13 +22,15 @@ const ROLE_PERMISSIONS: Record<RoleName, Permission[]> = {
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
     Permission.VIEW_BILLING,
-    Permission.MANAGE_BILLING
+    Permission.MANAGE_BILLING,
+    Permission.EDIT_BOOKING_NOTES
   ],
   MANAGER: [
     Permission.MANAGE_BOOKINGS,
     Permission.CREATE_BOOKINGS,
     Permission.VIEW_BOOKINGS,
-    Permission.VIEW_BILLING
+    Permission.VIEW_BILLING,
+    Permission.EDIT_BOOKING_NOTES
   ],
   STAFF: [Permission.CREATE_BOOKINGS, Permission.VIEW_BOOKINGS],
 };

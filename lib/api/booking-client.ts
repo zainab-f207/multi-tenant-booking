@@ -118,3 +118,44 @@ export async function deleteBooking(id: string): Promise<{ id: string; deleted: 
 export function newIdempotencyKey(): string {
   return crypto.randomUUID();
 }
+
+
+export interface BookingNoteDTO {
+  content: string;
+  version: number;
+  updatedAt: string | null;
+  updatedById: string | null;
+}
+
+export async function fetchBookingNote(
+  bookingId: string
+): Promise<BookingNoteDTO> {
+  const res = await fetch(
+    `/api/bookings/${bookingId}/note`,
+    { method: "GET" }
+  );
+
+  return parseResponse<BookingNoteDTO>(res);
+}
+
+export async function saveBookingNote(
+  bookingId: string,
+  content: string,
+  expectedVersion: number
+): Promise<BookingNoteDTO> {
+  const res = await fetch(
+    `/api/bookings/${bookingId}/note`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        content,
+        expectedVersion,
+      }),
+    }
+  );
+
+  return parseResponse<BookingNoteDTO>(res);
+}

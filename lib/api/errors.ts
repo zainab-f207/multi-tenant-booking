@@ -15,6 +15,7 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "IDEMPOTENCY_KEY_CONFLICT"
   | "BILLING_UNAVAILABLE"
+  | "VERSION_CONFLICT"
   | "INTERNAL_ERROR";
 
 export class NotFoundError extends Error {
@@ -39,6 +40,16 @@ export class IdempotencyKeyConflictError extends Error {
   ) {
     super(message);
     this.name = "IdempotencyKeyConflictError";
+  }
+}
+
+export class VersionConflictError extends Error {
+  constructor(
+    public expectedVersion: number,
+    public currentVersion: number
+  ) {
+    super("This note has changed. Reload the latest version before saving.");
+    this.name = "VersionConflictError";
   }
 }
 
@@ -77,6 +88,13 @@ export function handleApiError(err: unknown) {
 
   if (err instanceof IdempotencyKeyConflictError) {
     return apiError("IDEMPOTENCY_KEY_CONFLICT", err.message, 409);
+  }
+
+  if (err instanceof VersionConflictError) {
+    return apiError("VERSION_CONFLICT", err.message, 409, {
+      expectedVersion: err.expectedVersion,
+      currentVersion: err.currentVersion,
+    });
   }
 
   if (err instanceof BillingConfigurationError) {

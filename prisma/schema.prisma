@@ -1,12 +1,11 @@
-
 datasource db {
   provider = "postgresql"
   // Note: no `url` here in Prisma 7 — the connection string lives in prisma.config.ts
 }
 
 generator client {
-  provider = "prisma-client" 
-  output   = "../generated/prisma" 
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 enum BookingStatus {
@@ -19,7 +18,7 @@ enum BookingStatus {
 model Tenant {
   id        String   @id @default(uuid()) @db.Uuid
   name      String
-  slug      String   @unique 
+  slug      String   @unique
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -27,9 +26,10 @@ model Tenant {
   bookings        Booking[]
   sessions        Session[]
   idempotencyKeys IdempotencyKey[]
-  billingAccount TenantBillingAccount?
-  subscription   Subscription?
-  invoices       Invoice[]
+  billingAccount  TenantBillingAccount?
+  subscription    Subscription?
+  invoices        Invoice[]
+  bookingNotes    BookingNote[]
 
   @@map("tenants")
 }
@@ -55,12 +55,14 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  role            Role      @relation(fields: [roleId], references: [id], onDelete: Restrict)
-  createdBookings Booking[] @relation("BookingCreatedBy")
-  sessions        Session[]
+  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  role                Role          @relation(fields: [roleId], references: [id], onDelete: Restrict)
+  createdBookings     Booking[]     @relation("BookingCreatedBy")
+  sessions            Session[]
+  updatedBookingNotes BookingNote[]
 
   @@unique([tenantId, email])
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@index([roleId])
   @@map("users")
@@ -77,13 +79,15 @@ model Booking {
   status      BookingStatus @default(PENDING)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
+  note        BookingNote?
 
   tenant    Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   createdBy User   @relation("BookingCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
 
+  @@unique([tenantId, id])
   @@index([tenantId])
   @@index([createdById])
-  @@index([tenantId, startTime]) 
+  @@index([tenantId, startTime])
   @@map("bookings")
 }
 
@@ -156,13 +160,13 @@ model Subscription {
   tenantId             String             @unique @db.Uuid
   stripeSubscriptionId String             @unique
   stripePriceId        String
-  planKey               String
-  status                SubscriptionStatus
-  currentPeriodEnd      DateTime
-  cancelAtPeriodEnd     Boolean            @default(false)
-  lastStripeEventAt     DateTime
-  createdAt             DateTime           @default(now())
-  updatedAt             DateTime           @updatedAt
+  planKey              String
+  status               SubscriptionStatus
+  currentPeriodEnd     DateTime
+  cancelAtPeriodEnd    Boolean            @default(false)
+  lastStripeEventAt    DateTime
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -174,7 +178,7 @@ model Invoice {
   id               String        @id @default(uuid()) @db.Uuid
   tenantId         String        @db.Uuid
   stripeInvoiceId  String        @unique
-  amountPaid       Int           // minor units (cents) — matches Stripe's own representation
+  amountPaid       Int // minor units (cents) — matches Stripe's own representation
   currency         String
   status           InvoiceStatus
   hostedInvoiceUrl String?
@@ -196,4 +200,24 @@ model ProcessedStripeEvent {
   processedAt   DateTime @default(now())
 
   @@map("processed_stripe_events")
+}
+
+model BookingNote {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @db.Uuid
+  bookingId   String   @unique @db.Uuid
+  content     String   @default("") @db.Text
+  version     Int      @default(1)
+  updatedById String   @db.Uuid
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant    Tenant  @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  booking   Booking @relation(fields: [tenantId, bookingId], references: [tenantId, id], onDelete: Cascade)
+  updatedBy User    @relation(fields: [tenantId, updatedById], references: [tenantId, id], onDelete: Restrict)
+
+  @@unique([tenantId, bookingId])
+  @@index([tenantId])
+  @@index([tenantId, updatedAt])
+  @@map("booking_notes")
 }
