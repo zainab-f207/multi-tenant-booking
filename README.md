@@ -1218,6 +1218,47 @@ The billing architecture was designed so that Stripe remains the external paymen
 
 ---
 
+# Week 4 — Real-Time Collaboration
+
+Week 4 extends the multi-tenant booking platform with real-time collaboration features.
+
+Implemented functionality includes:
+
+- Real-time communication using Socket.IO
+- Booking notes API
+- Optimistic concurrency for safer concurrent note updates
+- Real-time typing indicators
+- Playwright end-to-end testing
+
+## Booking Notes API
+
+The booking notes endpoint is:
+
+```text
+GET /api/bookings/[id]/note
+PUT /api/bookings/[id]/note
+```
+
+The endpoint supports retrieving and updating notes associated with a booking. Access must follow the existing authentication, authorization, and tenant-isolation rules.
+
+Optimistic concurrency helps prevent conflicting updates from silently overwriting one another.
+
+## Real-Time Communication
+
+The application uses Socket.IO for real-time collaboration. The custom server is started through the project's configured `dev` and `start` scripts.
+
+Typing indicators provide real-time feedback during collaboration.
+
+## Week 4 Testing
+
+Run the Playwright end-to-end tests with:
+
+```bash
+npm run test:e2e
+```
+
+These tests use the project's configured Playwright test suite. Actual test results depend on running the tests in the local development environment.
+
 # Stripe and Database Consistency
 
 Stripe and PostgreSQL are separate systems and cannot participate in one atomic transaction.
