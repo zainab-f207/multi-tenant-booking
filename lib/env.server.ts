@@ -16,6 +16,7 @@ const envSchema = z.object({
   STRIPE_PRICE_ID_BASIC: z.string().optional(),
   STRIPE_PRICE_ID_PRO: z.string().optional(),
   APP_BASE_URL: z.string().optional(),
+  REDIS_URL: z.string().url().optional(),
 
   POSTGRES_PORT: z.coerce
     .number({ message: "POSTGRES_PORT must be a number" })

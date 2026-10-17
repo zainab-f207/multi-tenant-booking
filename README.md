@@ -759,29 +759,72 @@ multi-tenant-booking/
 │   ├── api/
 │   │   ├── auth/
 │   │   │   ├── login/
+│   │   │   │   └── route.ts
 │   │   │   └── logout/
+│   │   │       └── route.ts
 │   │   │
 │   │   ├── bookings/
+│   │   │   ├── route.ts
+│   │   │   └── [id]/
+│   │   │       ├── route.ts
+│   │   │       └── note/
+│   │   │           └── route.ts
 │   │   │
 │   │   ├── billing/
 │   │   │   ├── checkout/
+│   │   │   │   └── route.ts
 │   │   │   ├── invoices/
+│   │   │   │   └── route.ts
 │   │   │   ├── portal/
+│   │   │   │   └── route.ts
 │   │   │   └── subscription/
+│   │   │       └── route.ts
+│   │   │
+│   │   ├── settings/
+│   │   │   └── route.ts
 │   │   │
 │   │   └── webhooks/
 │   │       └── stripe/
+│   │           └── route.ts
 │   │
 │   ├── dashboard/
-│   │   └── billing/
+│   │   ├── billing/
+│   │   │   └── page.tsx
+│   │   ├── bookings/
+│   │   │   ├── page.tsx
+│   │   │   ├── new/
+│   │   │   │   └── page.tsx
+│   │   │   └── [id]/
+│   │   │       ├── page.tsx
+│   │   │       └── edit/
+│   │   │           └── page.tsx
+│   │   ├── settings/
+│   │   │   └── page.tsx
+│   │   └── page.tsx
 │   │
-│   └── ...
+│   ├── forgot-password/
+│   │   └── page.tsx
+│   ├── login/
+│   │   └── page.tsx
+│   ├── onboarding/
+│   │   └── page.tsx
+│   ├── register/
+│   │   └── page.tsx
+│   ├── layout.tsx
+│   ├── page.tsx
+│   └── globals.css
 │
 ├── components/
-│   └── billing/
-│       └── BillingPanel.tsx
+│   ├── billing/
+│   │   └── BillingPanel.tsx
+│   └── settings/
+│       └── TenantSettingsPanel.tsx
 │
 ├── lib/
+│   ├── api/
+│   │   └── billing-client.ts
+│   ├── auth/
+│   │   └── current-user.ts
 │   ├── billing/
 │   │   ├── checkout.ts
 │   │   ├── errors.ts
@@ -793,36 +836,51 @@ multi-tenant-booking/
 │   │   ├── tenant-lookup.ts
 │   │   ├── validation.ts
 │   │   └── webhook-sync.ts
-│   │
+│   ├── settings/
+│   │   └── service.ts
 │   ├── api/
-│   │   └── billing-client.ts
-│   │
+│   │   └── errors.ts
 │   ├── env.server.ts
 │   ├── prisma.ts
+│   ├── rbac.ts
+│   ├── redis.ts
 │   ├── stripe.ts
+│   ├── tenant-context.ts
 │   └── ...
 │
 ├── prisma/
 │   ├── migrations/
+│   │   ├── 20261016193156_add_tenant_settings/
+│   │   │   └── migration.sql
+│   │   └── ...
 │   └── schema.prisma
 │
 ├── scripts/
 │   ├── test-auth.ts
 │   ├── test-bookings.ts
 │   ├── test-idempotency.ts
+│   ├── test-rls.ts
 │   ├── test-tenant-security.ts
+│   ├── test-settings-cache.ts
 │   ├── test-billing-foundation.ts
 │   ├── test-billing-checkout.ts
 │   ├── test-stripe-webhook.ts
 │   ├── test-billing-subscription.ts
 │   ├── test-billing-history.ts
-│   └── test-billing-portal.ts
+│   ├── test-billing-portal.ts
+│   └── ...
 │
+├── .env.example
+├── .gitignore
 ├── docker-compose.yml
-├── prisma.config.ts
+├── next.config.ts
 ├── package.json
-└── README.md
-```
+├── package-lock.json
+├── postcss.config.mjs
+├── prisma.config.ts
+├── README.md
+├── tsconfig.json
+└── eslint.config.mjs```
 
 ---
 
@@ -840,6 +898,8 @@ APP_DATABASE_URL=postgresql://app_user:password@localhost:5432/multi_tenant_book
 SESSION_SECRET=your-session-secret
 
 APP_BASE_URL=http://localhost:3000
+
+REDIS_URL=redis://localhost:6379
 
 STRIPE_SECRET_KEY=your-stripe-secret-key
 
@@ -1258,6 +1318,109 @@ npm run test:e2e
 ```
 
 These tests use the project's configured Playwright test suite. Actual test results depend on running the tests in the local development environment.
+
+# Week 5 — Redis Caching & Tenant Settings
+
+Week 5 extends the multi-tenant booking platform with Redis caching and a tenant administration settings page.
+
+The goal is to reduce repeated database reads while preserving tenant isolation and ensuring that the application continues to work when Redis is unavailable.
+
+## Redis Integration
+
+Redis is included in the Docker Compose development environment using Redis 7. The application uses `ioredis` to connect to the cache.
+
+The Redis connection is optional and configured through `REDIS_URL`. If Redis is not configured or becomes unavailable, settings operations fall back to PostgreSQL rather than depending on the cache to remain available.
+
+Start the development services with:
+
+```bash
+docker compose up -d
+```
+
+Check that Redis is responding:
+
+```bash
+docker exec multi-tenant-booking-redis redis-cli ping
+```
+
+A healthy Redis instance should return:
+
+```text
+PONG
+```
+
+## Tenant-Specific Settings
+
+The `TenantSetting` model stores organization settings, including:
+
+- Time zone, defaulting to `Asia/Karachi`
+- Default booking duration, defaulting to 60 minutes
+- Creation and update timestamps
+
+Each tenant has its own settings record. Settings are read and updated within the authenticated tenant's database context, and PostgreSQL Row-Level Security continues to protect tenant-owned data.
+
+## Cache Strategy
+
+Settings are cached using a tenant-specific key:
+
+```text
+tenant:<tenantId>:settings:v1
+```
+
+The cache uses a 60-second time-to-live (TTL). This limits how long an unused cached value can remain available.
+
+When settings are updated successfully in PostgreSQL, the application attempts to invalidate that tenant's cache key so that a subsequent read can retrieve the updated settings.
+
+Redis is an optimization, not the source of truth. PostgreSQL remains the persistent store for tenant settings.
+
+## Graceful Degradation
+
+When Redis is unavailable or a cache operation fails, the settings service falls back to PostgreSQL. The application should continue to support settings reads and updates without requiring a working Redis connection.
+
+Cache invalidation failures can temporarily leave a previously cached value available until its TTL expires. This is a known consistency limitation of the current cache strategy.
+
+## Tenant Settings UI
+
+The tenant settings page is available at:
+
+```text
+/dashboard/settings
+```
+
+The page allows authorized tenant administrators to configure settings such as the time zone and default booking duration.
+
+The settings API is:
+
+```text
+GET /api/settings
+PUT /api/settings
+```
+
+The server derives the tenant from the authenticated session. The client cannot select a tenant by submitting a different tenant ID.
+
+The API validates settings on the server. The default booking duration must be an integer from 15 to 480 minutes and a multiple of 15. The time zone must be valid.
+
+Only users with the `MANAGE_ORGANIZATION` permission can manage organization settings.
+
+## Week 5 Verification
+
+Run the settings and cache test suite with:
+
+```bash
+npm run test:settings-cache
+```
+
+The test suite covers role permissions, tenant isolation, settings persistence, cache invalidation, cache hits, independent tenant settings, and database fallback when Redis is unavailable.
+
+Also run the general project checks:
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
+
+These automated checks complement manual verification of the settings page and its visible save and error states.
 
 # Stripe and Database Consistency
 
