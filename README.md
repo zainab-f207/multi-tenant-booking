@@ -1573,3 +1573,141 @@ The most important architectural principle throughout the project is that **tena
 Stripe billing extends the same principle into the payment layer by resolving billing ownership from verified Stripe Customer information and synchronizing Stripe events into tenant-scoped application records.
 
 The result is a practical foundation for a production-oriented SaaS-style multi-tenant booking platform.
+
+---
+
+# Week 6 — Database Performance, Docker & Production Polish
+
+Week 6 focuses on improving booking-query performance, testing the new migration against a large dataset, containerizing the application, and adding operational health checks and error pages.
+
+## Booking Query Performance
+
+A composite index was added to support booking queries that filter by tenant and status, apply a start-time range, and order results by start time.
+
+The Prisma model declares:
+
+```prisma
+@@index([tenantId, status, startTime], map: "bookings_tenant_status_starttime_idx")
+```
+
+The migration is:
+
+```text
+prisma/migrations/20261024190000_add_booking_status_start_time_index/migration.sql
+```
+
+It uses PostgreSQL's `CREATE INDEX CONCURRENTLY` so index creation does not take the ordinary table lock used by a standard index build. PostgreSQL requires this statement to run outside a transaction.
+
+### Benchmark Results
+
+The query was tested against an isolated PostgreSQL test database containing 100,006 booking rows.
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| Query execution time | 1.749 ms | 0.412 ms |
+| Shared buffer hits | 216 | 56 |
+| Query plan | Existing tenant/start-time index with filtering | Composite index scan |
+
+The observed execution time was approximately 76% lower in these individual measurements. The query plan after the migration used `bookings_tenant_status_starttime_idx`.
+
+These figures describe a local test with a specific dataset and query. They are not a guarantee of performance for every workload. The migration was tested against the isolated dataset and then applied to the development database. A dedicated test with concurrent application writes during index creation was not performed.
+
+## Dockerized Application
+
+The application can run alongside PostgreSQL and Redis through Docker Compose.
+
+The main files are:
+
+- `Dockerfile` — builds the application image.
+- `.dockerignore` — excludes local dependencies, build output, Git data, and local environment files from the build context.
+- `docker-compose.yml` — defines the application, PostgreSQL, and Redis services.
+
+Build the application image:
+
+```bash
+docker compose build app
+```
+
+Start the application and its dependencies:
+
+```bash
+docker compose up -d
+```
+
+Check service status:
+
+```bash
+docker compose ps
+```
+
+View application logs:
+
+```bash
+docker compose logs --tail 100 app
+```
+
+The application listens on port 3000. Within the Compose network, it connects to PostgreSQL at `postgres:5432` and Redis at `redis:6379`. Local development tools connect to the published host ports configured in `.env`.
+
+The Docker image build runs Prisma Client generation and the Next.js production build. Database migrations should be applied deliberately using the project's Prisma migration workflow; the application container does not automatically run migrations at startup.
+
+## Health Endpoints
+
+Two endpoints are available for operational checks:
+
+```text
+GET /api/health/live
+GET /api/health/ready
+```
+
+- **Liveness** reports whether the application can respond to requests.
+- **Readiness** checks database connectivity and returns HTTP 503 if the database check fails.
+
+The application container's Compose health check uses the readiness endpoint. PostgreSQL and Redis also have their own Compose health checks.
+
+Verify the endpoints locally:
+
+```powershell
+Invoke-RestMethod http://localhost:3000/api/health/live
+Invoke-RestMethod http://localhost:3000/api/health/ready
+```
+
+A successful readiness response includes `status: ok` and `checks.database: ok`.
+
+## Error and Not-Found Pages
+
+The application includes:
+
+- `app/not-found.tsx` — custom not-found UI.
+- `app/error.tsx` — route-level error boundary with a recovery action.
+- `app/global-error.tsx` — application-level fallback UI for errors in the root layout.
+
+These pages provide clearer recovery paths when a route is missing or an application error occurs.
+
+## Week 6 Verification
+
+The following checks have been completed successfully during this phase:
+
+- `npx prisma validate`
+- `npx prisma migrate status` — database schema up to date after migration deployment.
+- `npm run lint`
+- `npx tsc --noEmit`
+- `docker compose config --quiet`
+- Docker image build, including `npm run build`.
+- Docker Compose application startup.
+- Liveness and readiness endpoint checks.
+
+The isolated performance test used 100,006 booking rows. Its benchmark timings are local observations, not a production performance guarantee.
+
+The application container, PostgreSQL, and Redis were reported healthy after startup. Final verification passed for lint, TypeScript, the production build, database and security tests, billing tests, and all three Playwright end-to-end tests. Stripe checks requiring unavailable external credentials were skipped as documented in their test output.
+
+## Dependency Audit Note
+
+During the Docker image build, `npm ci` reported 10 dependency vulnerabilities: 1 moderate, 8 high, and 1 critical. This is an audit warning that requires separate review. No forced dependency upgrade was performed as part of Week 6.
+
+Review the dependency details with:
+
+```bash
+npm audit
+```
+
+Assess the affected packages and available fixes before updating dependencies, then rerun the project's checks.
