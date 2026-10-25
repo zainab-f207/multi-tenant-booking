@@ -89,6 +89,7 @@ model Booking {
   @@index([tenantId])
   @@index([createdById])
   @@index([tenantId, startTime])
+  @@index([tenantId, status, startTime], map: "bookings_tenant_status_starttime_idx")
   @@map("bookings")
 }
 
